@@ -102,8 +102,10 @@ class WhereWasIArgs(BaseModel):
 class TimelineArgs(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
-    min_minutes: float = Field(default=2, ge=0)
-    limit: int = Field(default=40, ge=1, le=100)
+    # A6: None means "pick a sensible granularity for the range" (2 min for
+    # a day or less, 5 min beyond that) rather than always 2.
+    min_minutes: Optional[float] = Field(default=None, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
 
@@ -410,7 +412,8 @@ def create_app(
     @app.post("/api/agent/activity_timeline")
     def agent_timeline(args: TimelineArgs):
         return run_agent(
-            "activity_timeline", _args(start=args.start, end=args.end, limit=args.limit, offset=args.offset or None),
+            "activity_timeline",
+            _args(start=args.start, end=args.end, min_minutes=args.min_minutes, limit=args.limit, offset=args.offset or None),
             lambda: queries.activity_timeline(db, args.start, args.end, args.min_minutes, args.limit, offset=args.offset),
         )
 

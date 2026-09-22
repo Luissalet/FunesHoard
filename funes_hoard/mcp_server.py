@@ -112,15 +112,18 @@ def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_ca
 
 @mcp.tool(annotations=_READ)
 def activity_timeline(
-    start: Optional[str] = None, end: Optional[str] = None, min_minutes: float = 2, limit: int = 40, offset: int = 0,
+    start: Optional[str] = None, end: Optional[str] = None, min_minutes: Optional[float] = None,
+    limit: int = 20, offset: int = 0,
 ) -> dict:
     """Chronological list of activity spans (one window/app at a time, or
     away/locked) for a range, each with a stable `id`, app, title, category,
     project, duration and a `human` time range. Default range: today. A
     single day word or date in `start` (e.g. "ayer", "2026-09-20") selects
     that whole day; otherwise start..end (end defaults to now). Spans under
-    `min_minutes` are skipped. `limit` max 100; when `has_more` is true call
-    again with `offset=next_offset`. Prefer activity_summary for totals.
+    `min_minutes` are skipped (default: 2 min for a day or less, 5 min for a
+    longer range). `limit` max 100; when `has_more` is true call again with
+    `offset=next_offset`. For a week or more, prefer activity_summary for
+    totals -- this tool's result grows with the range.
     Keywords: timeline, what did I do, activity log, sequence of the day, which windows, línea de tiempo, qué hice, que hice, historial, cronología del día.
     """
     return _post(

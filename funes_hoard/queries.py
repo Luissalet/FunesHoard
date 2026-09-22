@@ -134,11 +134,17 @@ def activity_where_was_i(
 
 
 def activity_timeline(
-    db: Database, start: Optional[str], end: Optional[str], min_minutes: float, limit: int,
+    db: Database, start: Optional[str], end: Optional[str], min_minutes: Optional[float], limit: int,
     now: Optional[float] = None, offset: int = 0, day: Optional[str] = None,
 ) -> dict:
     now = now if now is not None else time.time()
     start_ts, end_ts = parse_day_or_range(day, start, end, now)
+    if min_minutes is None:
+        # A6: a caller that did not ask for a specific granularity gets a
+        # coarser one for anything longer than a day -- a week of every
+        # 2-minute blip is ~9,000 tokens for a tool whose result should be
+        # skimmable; activity_summary is the right call for real totals.
+        min_minutes = 5.0 if (end_ts - start_ts) > 86400 else 2.0
     limit = max(1, min(limit, MAX_LIMIT))
     offset = max(0, offset)
     spans = clip_spans(get_spans(db, start_ts, end_ts), start_ts, end_ts)
@@ -328,6 +334,10 @@ def activity_projects(db: Database, since: Optional[str], limit: int, now: Optio
     for e in items:
         e["time_human"] = format_duration(e["time_s"])
         e["time_s"] = round(e["time_s"])
+        # C9: last_touched was epoch-seconds-only for the agent (agent_view
+        # turns it into an ISO string, not a phrase like the rest of the
+        # API's "human"/"when" fields use).
+        e["last_touched_human"] = human_moment(e["last_touched"], now)
     return {"since": since_ts, "items": items, "truncated": truncated, "has_more": truncated}
 
 

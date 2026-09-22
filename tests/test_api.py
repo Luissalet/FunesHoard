@@ -145,6 +145,32 @@ def test_agent_times_are_local_iso_with_offset(client):
     assert isinstance(ui["start"], float)
 
 
+# --- A6: a caller that does not ask for a granularity gets a sensible one --
+def test_agent_timeline_default_limit_is_20(client):
+    body = client.post("/api/agent/activity_timeline", json={"start": "-3d", "min_minutes": 0}).json()
+    assert len(body["items"]) <= 20
+
+
+def test_default_min_minutes_is_coarser_for_a_range_longer_than_a_day(tmp_path):
+    from funes_hoard.db import Database
+    from funes_hoard.queries import activity_timeline
+
+    db = Database(tmp_path / "data")
+    now = 1_800_000_000.0
+    # A 3-minute span: kept at the day default (2 min), dropped at the
+    # longer-range default (5 min).
+    db.execute(
+        "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, category, project, open)"
+        " VALUES (?, ?, 'active', 'Code.exe', '', 'x', 'Coding', 'Foo', 0)",
+        (now - 3 * 60, now),
+    )
+    same_day = activity_timeline(db, "-1h", "now", None, 100, now=now)
+    assert len(same_day["items"]) == 1
+
+    over_a_week = activity_timeline(db, "-8d", "now", None, 100, now=now)
+    assert len(over_a_week["items"]) == 0
+
+
 def test_agent_summary_group_by_is_honoured_and_validated(client):
     by_project = client.post("/api/agent/activity_summary", json={"day": "ayer", "group_by": "project"}).json()
     assert "by_project" in by_project and "by_category" not in by_project and "by_app" not in by_project
@@ -198,6 +224,14 @@ def test_agent_where_was_i_skips_media_unless_asked_for(client):
         "/api/agent/activity_where_was_i", json={"before": "yesterday", "contexts": 10, "all_categories": True}
     ).json()
     assert any(c["app"] == "Spotify.exe" for c in unfiltered["contexts"])
+
+
+def test_agent_projects_has_a_human_last_touched(client):
+    # C9: last_touched was epoch-seconds-only for the agent.
+    body = client.post("/api/agent/activity_projects", json={"since": "-30d", "limit": 10}).json()
+    assert body["items"], "fixture must have at least one project"
+    for item in body["items"]:
+        assert "last_touched_human" in item and item["last_touched_human"]
 
 
 def test_agent_search_since_a_day_word_means_from_its_midnight(client):
