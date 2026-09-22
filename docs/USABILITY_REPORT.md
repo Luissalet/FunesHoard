@@ -236,8 +236,8 @@ category, project, app; no title for redacted rows) and a range selector.
 
 Every commit below adds regression tests and keeps pytest, `npm run build`,
 the MCP protocol test and the manifest test green (test count 205 -> 251).
-Git identity, trailers and message rules follow CONTRACT.md §0 as in every
-other commit in this repo; each commit is small and self-contained.
+Git identity and commit-message rules are the same as in every other commit
+in this repo (see `AGENTS.md`); each commit is small and self-contained.
 
 | # | Fix | Commit |
 |---|---|---|
@@ -274,12 +274,12 @@ other commit in this repo; each commit is small and self-contained.
   (timeline segments not keyboard-focusable) are small, purely visual
   changes best done together with a screenshot re-walk rather than blind.
 - This pass did not re-run the Playwright/agent walkthrough (`scripts/
-  ui_walkthrough.py`, `scripts/agent_walkthrough.py`): the shared cloud
-  environment for this task (2 CPUs, other agents on sibling apps) asked
-  for pytest, `npm run build`, the MCP protocol test and the manifest test
-  as the bar to keep green, not a full browser re-walk. Every fix above has
-  its own unit/integration regression test instead. A screenshot re-walk
-  after the deferred UI items land would be the natural next step.
+  ui_walkthrough.py`, `scripts/agent_walkthrough.py`): time constraints for
+  this pass called for keeping pytest, `npm run build`, the MCP protocol
+  test and the manifest test green as the bar, not a full browser re-walk.
+  Every fix above has its own unit/integration regression test instead. A
+  screenshot re-walk after the deferred UI items land would be the natural
+  next step.
 
 ## Re-walk after the fixes
 
