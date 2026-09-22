@@ -117,3 +117,65 @@ def test_stop_flushes_the_open_span_closed(tmp_path):
     rows = db.query("SELECT * FROM spans")
     assert len(rows) == 1
     assert rows[0]["open"] == 0
+
+
+# --- review regressions ----------------------------------------------------
+def test_excluded_interlude_is_not_billed_to_the_surrounding_window(tmp_path):
+    db = Database(tmp_path / "data")
+    code = ("Code.exe", "a.py - Foo - Visual Studio Code", 0, False)
+    vault = ("KeePassXC", "KeePassXC - vault.kdbx", 0, False)
+    probe = make_probe([code, code, vault, vault, vault, code, code, ("chrome.exe", "x", 0, False)])
+    c = Collector(db, probe, interval_s=1)
+    for i in range(8):
+        c.tick(now=T0 + i * 20)
+    rows = db.query("SELECT start_ts, end_ts, app FROM spans WHERE open = 0 ORDER BY start_ts")
+    code_rows = [(r["start_ts"] - T0, r["end_ts"] - T0) for r in rows if r["app"] == "Code.exe"]
+    # 0-40 before the vault, 100-140 after: the 60 s in between is not Code.
+    assert code_rows == [(0, 40), (100, 140)]
+
+
+def test_pausing_closes_the_open_span_at_the_pause(tmp_path):
+    db = Database(tmp_path / "data")
+    probe = make_probe([("Code.exe", "x - Foo - Visual Studio Code", 0, False)] * 10)
+    c = Collector(db, probe, interval_s=1)
+    c.tick(now=T0)
+    c.tick(now=T0 + 10)
+    c.pause(minutes=5, now=T0 + 15)
+    c.tick(now=T0 + 20)
+    rows = db.query("SELECT * FROM spans")
+    assert len(rows) == 1 and rows[0]["open"] == 0
+    assert rows[0]["end_ts"] == T0 + 20  # recorded up to the first paused sample, then nothing
+
+
+def test_stale_open_rows_from_a_crash_are_closed_on_startup(tmp_path):
+    db = Database(tmp_path / "data")
+    db.execute(
+        "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, open) VALUES (1, 2, 'active', 'Code.exe', '', 'x', 1)"
+    )
+    Collector(db, make_probe([("a", "b", 0, False)]), interval_s=1)
+    assert db.query_one("SELECT COUNT(*) c FROM spans WHERE open = 1")["c"] == 0
+
+
+def test_stop_closes_at_the_last_sample_not_the_wall_clock(tmp_path):
+    db = Database(tmp_path / "data")
+    probe = make_probe([("Code.exe", "x - Foo - Visual Studio Code", 0, False)] * 3)
+    c = Collector(db, probe, interval_s=1)
+    c.tick(now=T0)
+    c.tick(now=T0 + 1)
+    c.stop()
+    assert db.query_one("SELECT end_ts FROM spans")["end_ts"] == T0 + 1
+
+
+def test_pause_at_least_never_shortens_or_ends_an_existing_pause(tmp_path):
+    db = Database(tmp_path / "data")
+    c = Collector(db, make_probe([("a", "b", 0, False)]), interval_s=1)
+    until, extended = c.pause_at_least(15, now=T0)
+    assert extended and until == T0 + 900
+    until, extended = c.pause_at_least(5, now=T0)
+    assert not extended and until == T0 + 900
+    until, extended = c.pause_at_least(30, now=T0)
+    assert extended and until == T0 + 1800
+    c.pause_indefinitely()
+    until, extended = c.pause_at_least(5, now=T0)
+    assert until is None and not extended
+    assert c.is_paused(T0 + 10 * 86400)

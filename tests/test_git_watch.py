@@ -62,3 +62,51 @@ def test_git_poller_persists_commits(tmp_path):
     assert rows[0]["subject"] == "feat: from poller"
     # second poll finds no new commits
     assert poller.poll_once() == 0
+
+
+def test_scan_repo_decodes_utf8_and_hides_console_on_windows(tmp_path, monkeypatch):
+    import funes_hoard.git_watch as gw
+
+    seen = {}
+
+    class R:
+        returncode = 0
+        stdout = "abc\x1f1700000000\x1ffeat: añadir caché\x1fAlex\x1fl@x\x1e"
+
+    def fake_run(args, **kwargs):
+        seen.update(kwargs)
+        return R()
+
+    monkeypatch.setattr(gw.sys, "platform", "win32")
+    events = scan_repo(tmp_path, 0, [], run=fake_run)
+    assert events[0].subject == "feat: añadir caché"
+    assert seen["encoding"] == "utf-8" and seen["errors"] == "replace"
+    assert seen["creationflags"] == 0x08000000
+
+
+def test_poller_defaults_to_the_repos_own_git_identity(tmp_path):
+    root = tmp_path / "projects"
+    mine = root / "atlas"
+    _init_repo(mine, "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
+    # Someone else's commit in the same repo must not be recorded.
+    subprocess.run(
+        ["git", "-c", "user.name=Other", "-c", "user.email=o@example.com", "commit", "-q", "--allow-empty", "-m", "theirs"],
+        cwd=str(mine), check=True, capture_output=True,
+        env={"GIT_AUTHOR_NAME": "Other", "GIT_AUTHOR_EMAIL": "o@example.com", "PATH": __import__("os").environ["PATH"],
+             "HOME": str(tmp_path)},
+    )
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    GitCommitsPoller(db).poll_once()
+    subjects = [r["subject"] for r in db.query("SELECT subject FROM commits")]
+    assert subjects == ["feat: mine"]
+    assert "atlas" in db.get_meta("known_repos")
+
+
+def test_configured_authors_override_identity(tmp_path):
+    root = tmp_path / "projects"
+    _init_repo(root / "atlas", "Someone", "someone@example.com", "feat: theirs")
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    db.set_meta("commit_authors", "luissalet, alex@example.com")
+    assert GitCommitsPoller(db).poll_once() == 0

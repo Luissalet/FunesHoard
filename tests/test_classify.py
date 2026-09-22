@@ -51,3 +51,53 @@ def test_disabled_rule_is_skipped():
     ]
     cat, _ = classify("chrome.exe", "", "anything", rules)
     assert cat == "Other"
+
+
+# --- review regressions ----------------------------------------------------
+def test_vscode_project_with_hyphen_in_name():
+    # The user's repos are all slugs like funes-hoard / babels-hoard.
+    assert detect_project("api.py - funes-hoard - Visual Studio Code", []) == "funes-hoard"
+
+
+def test_vscode_dirty_marker_remote_suffix_and_insiders():
+    assert detect_project("● main.py - Atlas - Visual Studio Code", []) == "Atlas"
+    assert detect_project("main.py - Atlas [WSL: Ubuntu] - Visual Studio Code", []) == "Atlas"
+    assert detect_project("main.py - Atlas (Workspace) - Visual Studio Code - Insiders", []) == "Atlas"
+
+
+def test_vscode_folder_only_title():
+    assert detect_project("Atlas - Visual Studio Code", []) == "Atlas"
+    assert detect_project("Welcome - Visual Studio Code", []) is None
+    assert detect_project("settings.json - Visual Studio Code", []) is None
+
+
+def test_file_name_with_dashes_does_not_become_the_project():
+    assert detect_project("my - notes.md - Atlas - Visual Studio Code", []) == "Atlas"
+
+
+def test_jetbrains_titles():
+    assert classify("pycharm64.exe", "", "Atlas – main.py", default_rules())[1] == "Atlas"
+    assert classify("idea64.exe", "", "lumen-core – [C:\\src\\lumen-core] – Main.java", default_rules())[1] == "lumen-core"
+
+
+def test_visual_studio_solution_title():
+    assert classify("devenv.exe", "", "Atlas - Microsoft Visual Studio", default_rules())[1] == "Atlas"
+
+
+def test_repo_name_matching_needs_word_boundaries():
+    # A repo called "api" must not claim every title that contains "rapid".
+    assert detect_project("Rapid prototyping - Google Chrome", ["api"]) is None
+    assert detect_project("api - pull request #3", ["api"]) == "api"
+
+
+def test_known_repo_names_come_from_discovered_repos_not_the_root_folder(tmp_path):
+    from funes_hoard.collector import _known_repo_names
+    from funes_hoard.db import Database
+
+    db = Database(tmp_path)
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", ("C:\\Users\\me\\Desktop\\Side projects",))
+    db.execute("INSERT INTO commits(ts, repo, sha, subject, author) VALUES (1, 'funes-hoard', 'abc', 's', 'a')")
+    db.set_meta("known_repos", '["babels-hoard"]')
+    names = _known_repo_names(db)
+    assert "Side projects" not in names
+    assert set(names) == {"funes-hoard", "babels-hoard"}

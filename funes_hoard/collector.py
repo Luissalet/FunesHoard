@@ -6,6 +6,7 @@ temp-dir database, without touching FastAPI.
 """
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -43,13 +44,20 @@ def _load_privacy_rules(db: Database, kind: str) -> List[PrivacyRule]:
 
 
 def _known_repo_names(db: Database) -> List[str]:
-    rows = db.query("SELECT path FROM commit_repos WHERE enabled = 1")
-    names = []
-    for r in rows:
-        p = r["path"].replace("\\", "/").rstrip("/")
-        if p:
-            names.append(p.rsplit("/", 1)[-1])
-    return names
+    """Names of the git repos the commits source knows about.
+
+    These come from repos actually discovered under the configured roots
+    (stored by the git poller) and from recorded commits -- never from the
+    root folder itself, which is usually a parent like "Projects" that
+    would otherwise be matched as a project in every title.
+    """
+    names = {r["repo"] for r in db.query("SELECT DISTINCT repo FROM commits")}
+    try:
+        stored = json.loads(db.get_meta("known_repos", "[]") or "[]")
+        names.update(n for n in stored if isinstance(n, str))
+    except ValueError:
+        pass
+    return sorted(n for n in names if n)
 
 
 class Collector:
@@ -67,8 +75,13 @@ class Collector:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._pause_lock = threading.Lock()
         self.last_idle_s: float = 0.0
         self.last_locked: bool = False
+        # A previous process that crashed (or was killed) left its open span
+        # flagged open; it can never be continued, so mark it closed at the
+        # last flushed end_ts rather than reporting it as "now" forever.
+        db.execute("UPDATE spans SET open = 0 WHERE open = 1")
 
     # -- lifecycle -----------------------------------------------------
     def start(self) -> None:
@@ -84,7 +97,9 @@ class Collector:
             self._thread.join(timeout=5)
             self._thread = None
         with self._lock:
-            span = self.builder.close_open(at_ts=time.time())
+            # Close at the last real sample: the wall clock may be far ahead
+            # (e.g. stopping right after resume from sleep).
+            span = self.builder.close_open(at_ts=self.builder.last_sample_ts)
             if span is not None:
                 self._persist_close(span)
 
@@ -119,6 +134,32 @@ class Collector:
         self.db.set_meta("paused_until", str(until))
         return until
 
+    def paused_until(self, now: Optional[float] = None) -> Optional[float]:
+        """Epoch seconds the pause ends, or None (not paused / until resumed)."""
+        if not self.is_paused(now):
+            return None
+        raw = self.db.get_meta("paused_until", "")
+        return None if raw == "inf" else float(raw)
+
+    def pause_at_least(self, minutes: float, now: Optional[float] = None) -> tuple[Optional[float], bool]:
+        """Pause for `minutes` unless recording is already paused for longer.
+
+        This is the agent's pause: it may only ever *extend* a pause, never
+        shorten one the human set or turn "until resumed" into a timed pause
+        (which would amount to resuming early). Returns (until, extended);
+        until is None for a pause that lasts until the human resumes it.
+        """
+        now = now if now is not None else time.time()
+        with self._pause_lock:
+            if self.is_paused(now):
+                raw = self.db.get_meta("paused_until", "")
+                if raw == "inf":
+                    return None, False
+                current = float(raw)
+                if current >= now + minutes * 60.0:
+                    return current, False
+            return self.pause(minutes, now), True
+
     def pause_indefinitely(self) -> None:
         """Pause until a human explicitly resumes it (no auto-expiry)."""
         self.db.set_meta("paused_until", "inf")
@@ -131,16 +172,23 @@ class Collector:
             self.last_idle_s = sample.idle_s
             self.last_locked = sample.locked
             if self.is_paused(sample.ts):
+                self._interrupt(sample.ts)
                 return
             exclude_rules = _load_privacy_rules(self.db, "exclude")
             redact_rules = _load_privacy_rules(self.db, "redact")
             cleaned = apply_privacy(sample, exclude_rules, redact_rules)
             if cleaned is None:
+                self._interrupt(sample.ts)
                 return
             closed = self.builder.add_sample(cleaned)
             for span in closed:
                 self._persist_close(span)
             self._maybe_flush_open(sample.ts)
+
+    def _interrupt(self, ts: float) -> None:
+        span = self.builder.interrupt(ts)
+        if span is not None:
+            self._persist_close(span)
 
     def _classify(self, span: Span) -> tuple[str, Optional[str]]:
         if span.kind != "active":

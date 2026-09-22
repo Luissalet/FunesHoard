@@ -112,6 +112,26 @@ class SpanBuilder:
         self._last_ts = s.ts
         return closed
 
+    def interrupt(self, ts: float) -> Optional[Span]:
+        """Close the open span because recording stopped at `ts` (a sample was
+        excluded by a privacy rule, or recording was paused).
+
+        Without this, the next ordinary sample of the same window would
+        simply extend the old span across the gap and bill the private
+        interlude to whatever was open before it.
+        """
+        span = self._current
+        if span is not None:
+            gap_too_big = self._last_ts is not None and (ts - self._last_ts) > self.sleep_gap_s
+            span.end_ts = max(span.end_ts, self._last_ts if gap_too_big else ts)
+        self._current = None
+        self._last_ts = None
+        return span
+
+    @property
+    def last_sample_ts(self) -> Optional[float]:
+        return self._last_ts
+
     def peek_open(self) -> Optional[Span]:
         """The still-open span, for periodic crash-safe flushing."""
         return self._current

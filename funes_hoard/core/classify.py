@@ -68,23 +68,81 @@ def default_rules() -> List[ClassifyRule]:
     ]
 
 
-# "file.py - Faustus - Visual Studio Code" -> project "Faustus"
-_VSCODE_TITLE_RE = re.compile(r"^.*\s-\s(?P<project>[^-]+?)\s-\s(Visual Studio Code|VSCode)\s*$")
-# JetBrains: "main.py - Faustus" or "Faustus - [main.py]"
-_JETBRAINS_TITLE_RE = re.compile(r"^(?P<a>.+?)\s-\s(?P<b>.+)$")
+_VSCODE_NAMES = {"visual studio code", "vscode"}
+_NOT_A_FOLDER = {"welcome", "settings", "keyboard shortcuts", "release notes", "get started"}
+_JETBRAINS_APPS = ("pycharm", "idea", "webstorm", "rider", "clion", "goland", "phpstorm", "rustrover", "datagrip")
+_BRACKET_SUFFIX_RE = re.compile(r"\s*(\[[^\]]*\]|\((workspace|running|debugging|administrator)\))\s*$", re.IGNORECASE)
 
 
-def detect_project(title: str, known_repo_names: List[str]) -> Optional[str]:
-    """Best-effort project name extraction from an editor window title."""
-    if not title:
+def _clean_name(part: str) -> Optional[str]:
+    name = part.strip().lstrip("●").strip()  # VS Code puts a dot before dirty files
+    prev = None
+    while prev != name:
+        prev = name
+        name = _BRACKET_SUFFIX_RE.sub("", name).strip()
+    return name or None
+
+
+def _vscode_project(title: str) -> Optional[str]:
+    """`file - <folder> - Visual Studio Code[ - Insiders]` -> folder.
+
+    Splits on the spaced separator only, so hyphenated folder names like
+    `funes-hoard` survive; the folder is always the part right before the
+    product name, however many dashes the file name contains.
+    """
+    parts = title.split(" - ")
+    idx = next((i for i in range(len(parts) - 1, -1, -1) if parts[i].strip().lower() in _VSCODE_NAMES), None)
+    if idx is None or idx == 0:
         return None
-    m = _VSCODE_TITLE_RE.match(title)
-    if m:
-        return m.group("project").strip()
-    for repo in known_repo_names:
-        if repo and re.search(re.escape(repo), title, re.IGNORECASE):
+    if idx >= 2:
+        return _clean_name(parts[idx - 1])
+    # "<something> - Visual Studio Code": a folder with no file open, or a
+    # lone file / editor tab with no folder. Only the former is a project.
+    only = _clean_name(parts[0])
+    if not only or "." in only or only.lower() in _NOT_A_FOLDER or only.lower().startswith("untitled"):
+        return None
+    return only
+
+
+def _jetbrains_project(title: str) -> Optional[str]:
+    """`<project> – file` or `<project> – [path] – file` (en dash; older builds use '-')."""
+    sep = " – " if " – " in title else " - "
+    first = title.split(sep, 1)[0]
+    if first == title:
+        return None
+    return _clean_name(first)
+
+
+def _visual_studio_project(title: str) -> Optional[str]:
+    marker = " - Microsoft Visual Studio"
+    if marker not in title:
+        return None
+    return _clean_name(title.split(marker, 1)[0])
+
+
+def _repo_in_title(title: str, known_repo_names: List[str]) -> Optional[str]:
+    # Longest names first so "funes-hoard" wins over a repo called "hoard";
+    # word-ish boundaries so a repo called "api" does not match "rapid".
+    for repo in sorted({r for r in known_repo_names if r}, key=len, reverse=True):
+        if re.search(r"(?<![\w-])" + re.escape(repo) + r"(?![\w-])", title, re.IGNORECASE):
             return repo
     return None
+
+
+def detect_project(title: str, known_repo_names: List[str], app: str = "") -> Optional[str]:
+    """Best-effort project name extraction from an editor window title,
+    falling back to any known git repo name that appears in the title."""
+    if not title:
+        return None
+    app_l = (app or "").lower()
+    project = _vscode_project(title)
+    if project is None and any(name in app_l for name in _JETBRAINS_APPS):
+        project = _jetbrains_project(title)
+    if project is None and "devenv" in app_l:
+        project = _visual_studio_project(title)
+    if project:
+        return project
+    return _repo_in_title(title, known_repo_names)
 
 
 def classify(
@@ -117,5 +175,5 @@ def classify(
             project = rule.project
             break
     if project is None:
-        project = detect_project(title, known_repo_names)
+        project = detect_project(title, known_repo_names, app=f"{app} {exe}")
     return category, project
