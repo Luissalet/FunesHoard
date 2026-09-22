@@ -18,12 +18,13 @@ funes_hoard/
   collector.py      Collector: probe -> privacy -> SpanBuilder -> sqlite, 1 Hz
   recent_files.py   .lnk scanning of the Windows Recent folder, every 60s
   git_watch.py      git log scanning of configured repo roots, every 10 min
-  retention.py      purge spans/files/commits older than N days
+  retention.py      purge / delete-range for spans, files, commits and their search rows
   scheduler.py      background thread driving the three pollers above
   jobs.py           tiny in-memory job runner (reclassify, retention-now)
   db.py             sqlite3 (WAL), one shared connection, schema + seeding
   queries.py        read functions shared by the UI API and the agent API
-  timeparse.py      date-word / relative-offset parsing (hoy/ayer/-2h/...)
+  timeparse.py      date-word / relative-offset parsing (hoy/ayer/-2h/...), ISO output
+  errors.py         BadInput: {error, message} 400s raised from the query layer
   demo.py           --demo synthetic data, built by driving the real Collector
   api.py            FastAPI app: guard middleware, UI API, /api/agent/*
   mcp_server.py     standalone stdio MCP adapter (HTTP client only)
@@ -53,6 +54,15 @@ closes the open span at the *last* sample's timestamp instead of bridging
 the gap, so a laptop that slept for two hours does not get credited two
 hours of continuous activity.
 
+A sample dropped by an **exclusion rule**, or taken while **paused**, closes
+the open span at that moment (`SpanBuilder.interrupt`). Otherwise returning
+to the same window after a minute in a password manager would stretch the
+old span over the private interlude. A process that is killed leaves its
+open span flagged `open=1`; the next start closes such rows, so a stale row
+is never reported as the current window.
+
+The collector stops the span at the last real sample, not the wall clock.
+
 ## Threads
 
 - **Collector** (`collector.py`): one Python thread, ticks every
@@ -71,20 +81,57 @@ hours of continuous activity.
 ## Database
 
 SQLite (stdlib `sqlite3`), WAL mode, **one shared long-lived connection**
-per `Database` instance (not one connection per query -- the app samples at
-1 Hz, and opening a fresh connection every time was the single biggest cost
-in early profiling: it took the test suite from ~9s to ~34s). All access
-goes through `Database.execute`/`query`/`query_one`, serialized by a
-`threading.RLock`. Search uses SQLite FTS5 when the platform's `sqlite3`
-build supports it (checked at startup, `Database.fts_available`), falling
-back to `LIKE` queries otherwise -- see the README's Windows-risk note.
+per `Database` instance rather than one per query (the collector writes
+every second). All access goes through `Database.execute`/`query`/
+`query_one`, serialised by a `threading.RLock`; the connection is closed on
+shutdown. Tables: `spans`, `file_events`, `commits`, `commit_repos`,
+`classify_rules`, `privacy_rules`, `agent_calls`, `meta` (settings such as
+`paused_until`, `retention_days`, `commit_authors`, `known_repos`).
+
+Search uses an FTS5 table (`search_fts`, `unicode61 remove_diacritics 2`)
+when the platform's `sqlite3` supports it (checked at startup,
+`Database.fts_available`), and `LIKE` otherwise. Queries are tokenised into
+quoted prefix terms, never passed to FTS5 verbatim. Delete-range and
+retention remove the index rows with the table rows.
+
+## HTTP surface
+
+- `browser_attack_guard` middleware: the `Host` header must be a loopback
+  name *with this app's port*; non-GET requests with an `Origin` must come
+  from `http://<loopback>:<this port>`, and `Sec-Fetch-Site: cross-site` is
+  refused. No CORS.
+- Errors are `{"error", "message"}` everywhere; request-validation errors
+  become `400 bad_arguments` naming the field (and are audited when they
+  hit an agent route).
+- The SPA fallback resolves the requested path and only serves files that
+  are inside `frontend/dist`; anything else gets `index.html`.
+- UI endpoints return epoch seconds; `/api/agent/*` returns the same query
+  results through `queries.agent_view`, which converts times to local ISO
+  8601 with offset and truncates long titles.
+
+## Windows specifics
+
+- `collectors/windows.py` declares `argtypes`/`restype` for every Win32
+  call (handles are pointer-sized) and computes idle time from the 32-bit
+  `GetTickCount` modulo 2^32, the way `LASTINPUTINFO.dwTime` is defined.
+- `git` runs with `encoding="utf-8"`, `errors="replace"` and, on Windows,
+  `CREATE_NO_WINDOW`, so a hidden app does not flash consoles.
+- `scripts/start.ps1` starts the app hidden with the repo root as working
+  directory and waits for `/api/health`. The app writes `data/funes.pid`
+  with its own PID (the venv `python.exe` is a launcher around the real
+  interpreter, so the launcher's PID is not the one holding the port);
+  `scripts/stop.ps1` uses it, verifies the command line, and falls back to
+  the process listening on the port.
 
 ## Decisions worth explaining
 
 - **Agent surface is a fixed set of HTTP endpoints, not general SQL.** The
   `/api/agent/<tool>` routes are individually declared FastAPI routes,
   nothing under that prefix can reach the rules or privacy tables --
-  verified by `tests/test_api.py::test_agent_api_has_no_rules_or_delete_or_export_endpoints`.
+  verified by `tests/test_security.py::test_agent_surface_is_exactly_the_eight_tools`.
+- **The agent's pause can only extend.** `Collector.pause_at_least` keeps a
+  longer or indefinite pause as it is, so the one write the agent has can
+  never amount to resuming early.
 - **Classification is versioned, not live-recomputed on every read.** Each
   span stores the `rules_version` it was classified under; "Reapply to
   history" (or the agent-inaccessible `/api/classify/reapply`) recomputes

@@ -4,37 +4,36 @@
 
 [Español](README.es.md) · [Run locally](#run-locally-on-windows) · [Connect an AI](docs/MCP.md) · [Portfolio](https://luissalet.github.io/Portfolio/#projects)
 
-![Today view: a day timeline by category, active/away totals, and focus blocks](docs/media/today.png)
+![Day view: yesterday's timeline zoomed to the active hours, one segment pinned, totals by category, app and project](docs/media/today.png)
 *Actual application, three days of synthetic demo data (`--demo`, no real window titles).*
 
 ## Why
 
-A local assistant with a 27B model and no memory of the desktop can only
-guess when you ask "where was I?" or "how did today go?". It has no record
-of what was actually in front of you, so it either invents an answer or
-asks you to explain everything from scratch, every time. Funes's Hoard
-records the one thing a language model structurally cannot see on its
-own -- the sequence of what was on screen -- turns it into spans, day
-summaries and focus blocks, and answers those questions from data instead
-of guesses.
+A local assistant has no record of what was on the user's screen. Asked
+"where was I?", "how did today go?" or "what was that DuckDB page I had
+open yesterday?", a language model can only invent an answer or ask the
+user to reconstruct it. Funes's Hoard records the one thing the model
+cannot see: the sequence of windows in front of the user, with idle and
+locked time, the files they opened and the commits they made. It turns
+that into spans, day summaries, focus blocks and resume-context answers,
+and gives the assistant eight small tools to ask for them.
 
 ## What is implemented
 
 | Area | Available now | Boundary |
 | --- | --- | --- |
-| Collection | Foreground app/window/idle/locked sampled at 1 Hz; merged into active/away/locked spans; away time back-dated to when input actually stopped; sleep/hibernate gaps detected and not bridged; open span flushed every 30s (crash loses <30s) | Windows collector uses `ctypes`/`psutil`; the Linux collector (dev-only, best effort via `xdotool`/`xprintidle`) is not the production target |
-| Privacy | Exclusion rules drop a sample before it is ever stored (password managers, incognito/private browsing, EN+ES); redaction rules replace only the title (banking/login keywords, EN+ES); pause 15m/1h/until-resumed with automatic expiry; retention purge; delete-a-range; export JSON | Browser **domain** extraction from titles is not implemented (unreliable from title text alone) -- see Boundaries below |
-| Classification | Ordered app/title-regex/domain rules with sensible defaults for common Windows apps; project auto-detection from VS Code titles and known git repo names; live preview ("this rule would reclassify N spans") before committing; reapply-to-history as a background job, versioned so reads stay cheap | JetBrains title parsing is generic (`A - B` heuristic), not IDE-specific |
-| Derived knowledge | Day/week/range summaries (active/away, by category/app/project, first/last activity), context switches (>=10s dwell), focus blocks (>=25 min, interruptions <=2 min), "where was I" (resume-context) merging by project | — |
-| Other sources | Recent files via a from-scratch `.lnk` (Shell Link) binary parser -- no COM dependency; git commits scanned from configured repo roots, filtered by author | The optional browser-address-bar UI Automation reader described as a stretch goal was not built: title-based project/category detection already covers the common case, and a robust cross-browser UI Automation reader is a project of its own -- documented here as descoped, not silently dropped |
-| Search | SQLite FTS5 over titles/files/commit subjects, with snippet highlighting | Falls back to substring `LIKE` search if the platform's `sqlite3` build lacks FTS5 (checked at startup) -- confirmed present on the Linux build used for development; **not verified on the Windows 3.13 python.org build**, see Windows risk below |
-| Agent API | Read-only except `activity_pause`; every call recorded and shown in "Assistant activity"; verified with a real MCP client over stdio against a live app | — |
-| UI | Today (timeline, totals, focus blocks), Week, Search, Projects, Files & commits, Rules (with live preview), Privacy, Assistant activity; EN/ES; light/dark | — |
+| Collection | Foreground app, window title, idle and locked state sampled every second on Windows (`ctypes` + `psutil`); merged into active/away/locked spans; away time back-dated to when input stopped; sleep gaps and excluded or paused moments close the span instead of bridging it; the open span is flushed every 30 s and a crashed session's span is closed on the next start | The Linux probe (`xdotool`/`xprintidle`) is a development aid; the Win32 calls themselves were not run in this build environment (see the Windows note) |
+| Privacy | Exclusion rules drop a sample before it is stored (password managers, private/incognito windows, EN+ES); redaction rules keep the app and replace the title; invalid rules are rejected, not silently ignored; pause 15 min / 1 h / until resumed, with automatic resume; retention purge; delete a range (overlapping spans and their search rows included); JSON export | Rules apply from the moment they are added, not retroactively to stored titles |
+| Classification | Ordered app / title-regex / domain-in-title rules with defaults for common Windows apps; project detection from VS Code (hyphenated folders, remote and Insiders titles), JetBrains and Visual Studio titles, plus the names of discovered git repos; live preview ("would reclassify N spans"); reapply to history as a background job with progress | Browser domains are not read from the address bar; a "domain" rule matches text in the title |
+| Derived knowledge | Day, week and range totals by category/app/project, clipped at the window edges; first/last activity; context switches (>= 10 s dwell); focus blocks (>= 25 min, each interruption <= 2 min); "where was I" with distinct contexts, their last title, files and commits | Focus is measured from window time only; it says nothing about attention |
+| Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
+| Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
+| Agent API | Eight tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
+| Interface | Today (zoomable timeline, legend, pinned details), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Assistant activity; English/Spanish; light/dark | Desktop layout; not designed for phones |
 
-More screens: [Privacy](docs/media/privacy.png) (pause controls, exclusion/
-redaction rules, retention) · [Search](docs/media/search.png) (FTS5 with
-snippet highlighting) · [Assistant activity](docs/media/assistant-activity.png)
-(every agent call, auditable).
+More screens: [Search](docs/media/search.png) · [Privacy](docs/media/privacy.png) ·
+[Assistant activity](docs/media/assistant-activity.png) (real calls made through
+the agent API by `scripts/screenshots.py`, including a rejected one).
 
 ## Connect it to Faustus
 
@@ -43,24 +42,30 @@ Faustus go to **Connectors -> Nearby apps -> Add**.
 
 | Tool | What it does | Read-only? |
 | --- | --- | --- |
-| `activity_now` | Current app/title/project, idle seconds, recording state | yes |
-| `activity_where_was_i` | Resume context: last work contexts before a moment, with files/commits | yes |
-| `activity_timeline` | Merged spans for a range | yes |
-| `activity_summary` | Day/range totals, focus blocks, context switches | yes |
-| `activity_search` | Find when a title/file/commit appeared | yes |
+| `activity_now` | Current app, title, project, idle seconds, recording or paused (and until when) | yes |
+| `activity_where_was_i` | Resume context: last distinct contexts before a moment, with title, files and commits | yes |
+| `activity_timeline` | Spans for a day or range, paginated with `offset` | yes |
+| `activity_summary` | Totals grouped by category/app/project, focus blocks, context switches | yes |
+| `activity_search` | When a title, file or commit containing some words appeared | yes |
 | `activity_recent_files` | Recently opened files | yes |
 | `activity_projects` | Time per project, last touched, commits | yes |
-| `activity_pause` | Pause recording (cannot resume early, change rules, delete or export) | **no** (the only write) |
+| `activity_pause` | Pause recording; never shortens an existing pause | **no** (the only write) |
 
-It also works with any MCP client over stdio -- see
-[docs/MCP.md](docs/MCP.md) for the full reference and a config snippet.
+It works with any MCP client over stdio; [docs/MCP.md](docs/MCP.md) has the
+output of every tool, the error codes and a config snippet. The skill
+[`skills/where-was-i/SKILL.md`](skills/where-was-i/SKILL.md) tells a local
+model which tool to pick and the traps.
 
 ## Run locally on Windows
 
-Double-click **`Iniciar Funes's Hoard.cmd`** (or run
-`scripts\start.ps1`), which creates the venv, installs pinned dependencies
-and builds the frontend on first run, then starts the app at
-`http://127.0.0.1:8813`.
+Double-click **`Iniciar Funes's Hoard.cmd`**. It runs `scripts\start.ps1`,
+which on first run creates `.venv` (Python 3.11+, preferring
+`C:\Python313`), installs `requirements-lock.txt` and builds the interface
+if `frontend\dist` is missing; later runs reinstall only when the lock
+changed. It then starts the app hidden, with the repo root as working
+directory, waits for `/api/health` and opens `http://127.0.0.1:8813`. If the
+app is already running it just opens it. **`Detener Funes's Hoard.cmd`**
+stops it. `scripts\start.ps1 -Demo` runs on synthetic data.
 
 Manual steps:
 
@@ -71,75 +76,76 @@ cd frontend; npm ci; npm run build; cd ..
 .venv\Scripts\python -m funes_hoard
 ```
 
-Add `--demo` to run against synthetic data in `data-demo/` instead of
-recording your real desktop (`--data-dir` and `--no-browser` are also
-available; see `python -m funes_hoard --help`).
+Flags: `--demo` (synthetic data in `data-demo/`, nothing recorded from the
+desktop), `--data-dir`, `--port`, `--no-browser`. Data lives in `data/`
+(or `FUNES_DATA_DIR`). The app only listens on loopback; `--host` refuses
+anything else.
 
 ## Architecture
 
-FastAPI + a 1 Hz collector thread + SQLite (WAL), with pure, unit-tested
-core logic (span building, privacy, classification, summaries) that never
-imports FastAPI or sqlite. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+FastAPI, one collector thread sampling once a second, one scheduler thread
+for recent files, git and retention, and SQLite in WAL mode. The span,
+privacy, classification and summary logic is pure Python with no FastAPI
+or sqlite imports. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Tests
 
 ```
-.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m pytest -q          # 177 passed in about 30 s
+cd frontend && npm ci && npm run build  # 0 TypeScript errors
 ```
 
-**85 tests pass in about 10 seconds**, covering: span merging and away/
-locked back-dating, sleep-gap handling, crash-safe flushing, privacy
-exclusion (asserting the row never exists) and redaction, pause expiry,
-retention purge, the `.lnk` parser against a fixture built in the test
-itself (a real bug -- `LocalBasePathOffset` was being read from the wrong
-byte offset per MS-SHLLINK -- was caught and fixed by this test),
-classification and project detection, focus blocks and context switches,
-date-word parsing (hoy/ayer/this week/-2h), the full FastAPI surface
-including the browser-attack guard, the manifest check, and an end-to-end
-MCP protocol test that spawns `mcp_server.py` as a real subprocess against
-a live app.
-
-`npm ci && npm run build` (in `frontend/`) passes with zero TypeScript
-errors.
+The suite covers span merging, away/locked back-dating, sleep gaps,
+excluded and paused interludes, crash flushing and stale open spans;
+privacy rules (asserting the excluded row never exists) and rule
+validation; pause expiry and the agent's extend-only pause; retention and
+delete-range including the search index; the `.lnk` parser on fixtures
+built in the tests (ANSI, Unicode, suffix, truncated); project detection
+from editor titles; focus blocks, switches, clipping and where-was-i on
+scripted days; date words in both languages and their range edges; search
+on both the FTS5 and `LIKE` paths with hostile input; the browser guard
+(host and origin ports, `null` origin), the SPA path-traversal fix and the
+exact agent route list; the Windows probe logic with the Win32 calls faked
+(tick wraparound, access-denied executables); git scanning with UTF-8
+subjects, author filters and hidden consoles; the CLI; the manifest check;
+and an MCP protocol test that spawns `mcp_server.py` over stdio against a
+live app and checks keywords, annotations, error passthrough and the audit
+log.
 
 ## Privacy and limits
 
-- Binds `127.0.0.1` only. No telemetry, no outbound network calls except
-  the git commit scan (local `git log`, no network) and this UI's own
-  fetches to itself.
-- Exclusion rules run **before** a sample is ever written to disk; this is
-  tested by asserting the row never exists, not just that it gets deleted
-  later.
-- The agent's write access is exactly one action (pause) and nothing else;
-  the enumerated `/api/agent/<tool>` routes are the entire agent-facing
-  surface, verified by a test that every other write path 404s under that
-  prefix.
-- Results are capped (5-100 items depending on the tool) with an explicit
-  `truncated`/`has_more` flag, since the intended consumer is a small local
-  model with a finite context window.
+- Everything stays in `data/funes.sqlite3` on this computer. No telemetry
+  and no network use; `git log` runs locally.
+- Exclusion rules run before a sample is written; a test asserts the row
+  never exists. Redacted titles are never put in the search index.
+- The assistant sees only what the eight tools return and can do exactly
+  one thing: pause (or lengthen a pause). Every call is listed in
+  "Assistant activity".
+- Results are capped (default 5-40 items, maximum 100) and long titles are
+  truncated, because the intended consumer is a local model with a finite
+  context window.
 
-### Boundaries (things this deliberately does not do)
+### Boundaries
 
-- No browser-domain extraction from titles (unreliable without a UI
-  Automation reader; descoped rather than shipped half-working).
-- Retention purge, in addition to spans, also clears `file_events` and
-  `commits` in the same window -- a deliberate widening from "spans only"
-  so that "delete my history" actually means it; see
-  `docs/ARCHITECTURE.md`.
-- FTS5 search falls back to substring search if unavailable; see the
-  Windows risk note below.
+- No browser address-bar reader: the optional UI Automation reader in the
+  original plan was descoped rather than shipped fragile. Title rules cover
+  most cases.
+- Retention and delete-range also remove `file_events` and `commits` in the
+  same window, not only spans, so deleting history means all of it.
 
 ### Windows-specific risk not testable from this Linux build environment
 
-This was built and tested on Linux (Python 3.11); the production target is
-Windows (Python 3.13 at `C:\Python313`). Two things could not be verified
-here and should be checked on first real Windows run:
+Built and tested on Linux with Python 3.11; the target is Windows with
+Python 3.13. Check on the first real run:
 
-1. **SQLite FTS5 availability** in the python.org Windows 3.13 build. The
-   app checks for it at startup and falls back to substring search
-   automatically (`Database.fts_available`, see `docs/ARCHITECTURE.md`),
-   so search still works either way -- but the *quality* of ranking differs.
-2. **`WindowsProbe`** (`ctypes` calls into `user32`/`kernel32`, plus
-   `psutil`) cannot run at all on Linux; its logic around idle detection
-   and lock-screen detection is exercised in tests only through the
-   `Probe` interface with a fake, never against real Win32 calls.
+1. **The Win32 calls** in `WindowsProbe` (`GetForegroundWindow`,
+   `GetLastInputInfo`, `OpenInputDesktop`) never ran here. Their signatures
+   are declared and the logic around them is tested with the calls faked,
+   but lock detection relies on `OpenInputDesktop` failing on the secure
+   desktop, which will also report a UAC prompt as "locked".
+2. **FTS5 in the python.org 3.13 sqlite3**: the app falls back to `LIKE`
+   search if it is missing.
+3. **The PowerShell launchers** were parsed and the start flow was run under
+   PowerShell 7 on Linux (without `-WindowStyle Hidden`, which only exists on
+   Windows); `stop.ps1` uses `Get-CimInstance` and `Get-NetTCPConnection`,
+   which were not run.

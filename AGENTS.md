@@ -21,15 +21,22 @@ Reglas para agentes de código que trabajen en este repositorio.
 4. Si la herramienta escribe algo, pregúntate si de verdad hace falta:
    el contrato es "solo lectura salvo pausar". Si no es pausar, probablemente
    no debería ser una herramienta del agente.
-5. Actualiza `docs/MCP.md` y el test de protocolo MCP
-   (`tests/test_mcp_protocol.py`).
+5. Los errores se lanzan como `BadInput(code, message)` con un mensaje que
+   diga qué pasar en su lugar; nunca un 500 por una entrada del modelo.
+6. Actualiza `docs/MCP.md`, `skills/where-was-i/SKILL.md` y el test de
+   protocolo MCP (`tests/test_mcp_protocol.py`).
 
 ## Pruebas
 
-- `pytest -q` debe tardar menos de 90s. Si una prueba nueva es lenta,
+- `pytest -q` debe tardar menos de 90 s. Si una prueba nueva es lenta,
   sospecha primero de una conexión sqlite nueva por llamada (ver
   `docs/ARCHITECTURE.md`, sección Database) antes de asumir que hace falta
   mockear algo.
+- Las pruebas que dependen de la hora usan "yesterday" o un `now` fijo: los
+  datos de demo de hoy empiezan a las 09:00 y la suite tiene que pasar a
+  cualquier hora.
+- Las salidas del agente pasan por `queries.agent_view` (horas ISO locales,
+  títulos recortados); la interfaz recibe segundos epoch. No mezcles ambas.
 - El código específico de Windows (`collectors/windows.py`) debe poder
   **importarse** en Linux sin lanzar excepción; solo debe fallar al
   **instanciar** `WindowsProbe()` fuera de `sys.platform == "win32"`.

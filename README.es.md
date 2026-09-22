@@ -1,67 +1,73 @@
-# El Tesoro de Funes
-### ¿Dónde estaba? ¿Qué hacía antes de comer? ¿Cuánto de esta semana fue realmente para Faustus?
-**La memoria episódica de tu ordenador: aplicación en primer plano, ventana, archivos abiertos y commits realizados, guardados en un SQLite local y filtrados por privacidad antes de escribir nada.**
+# Funes's Hoard
+### ¿Dónde me había quedado? ¿Qué hacía antes de comer? ¿Cuánto de esta semana se fue de verdad en Faustus?
+**La memoria episódica de tu ordenador: aplicación en primer plano, ventana, archivos abiertos y commits, guardados en un SQLite local y filtrados por privacidad antes de escribir nada.**
 
 [English](README.md) · [Ejecutar en local](#ejecutar-en-local-en-windows) · [Conectar una IA](docs/MCP.md) · [Portfolio](https://luissalet.github.io/Portfolio/#projects)
 
-![Vista Hoy: línea de tiempo del día por categoría, totales activo/ausente y bloques de foco](docs/media/today.png)
+![Vista del día: la línea de tiempo de ayer ajustada a las horas activas, un tramo fijado y totales por categoría, aplicación y proyecto](docs/media/today.png)
 *Aplicación real, tres días de datos de demostración sintéticos (`--demo`, sin títulos de ventana reales).*
 
 ## Por qué
 
-Un asistente local con un modelo de 27B y ninguna memoria del escritorio
-solo puede adivinar cuando le preguntas "¿dónde estaba?" o "¿cómo fue el
-día?". No tiene ningún registro de lo que realmente tenías delante, así que
-o se lo inventa o te pide que se lo expliques todo desde cero, cada vez. El
-Tesoro de Funes graba lo único que un modelo de lenguaje no puede ver por
-sí mismo -- la secuencia de lo que estaba en pantalla -- lo convierte en
-tramos, resúmenes del día y bloques de foco, y responde a esas preguntas
-con datos en vez de suposiciones.
+Un asistente local no sabe qué había en la pantalla de su usuario. Si le
+preguntas "¿dónde me había quedado?", "¿qué tal ha ido el día?" o "¿cuál
+era esa página de DuckDB que tenía abierta ayer?", un modelo de lenguaje
+solo puede inventarse la respuesta o pedirte que la reconstruyas tú.
+Funes's Hoard guarda justo lo que el modelo no puede ver: la secuencia de
+ventanas que tenías delante, con el tiempo inactivo y bloqueado, los
+archivos que abriste y los commits que hiciste. Lo convierte en tramos,
+resúmenes del día, bloques de concentración y respuestas para retomar el
+contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 
 ## Qué está implementado
 
 | Área | Disponible ahora | Límite |
 | --- | --- | --- |
-| Recolección | Aplicación/ventana/inactividad/bloqueo en primer plano muestreados a 1 Hz; fusionados en tramos activo/ausente/bloqueado; el tiempo ausente se retro-fecha al momento real en que cesó la entrada; se detectan saltos de suspensión/hibernación sin unirlos; el tramo abierto se vuelca cada 30s (un cuelgue pierde <30s) | El recolector de Windows usa `ctypes`/`psutil`; el de Linux (solo desarrollo, mejor esfuerzo vía `xdotool`/`xprintidle`) no es el objetivo de producción |
-| Privacidad | Las reglas de exclusión descartan una muestra antes de guardarla (gestores de contraseñas, navegación privada/incógnito, ES+EN); las de redacción sustituyen solo el título (banca/login, ES+EN); pausa de 15min/1h/hasta reanudar con expiración automática; purga por retención; borrado de un rango; exportación JSON | No se extrae el **dominio** del navegador a partir del título (poco fiable solo con texto) -- ver Límites más abajo |
-| Clasificación | Reglas ordenadas por app/regex de título/dominio con valores por defecto para apps comunes de Windows; detección de proyecto desde títulos de VS Code y nombres de repositorios git conocidos; previsualización en vivo ("esta regla reclasificaría N tramos") antes de aplicar; reaplicar al historial como tarea en segundo plano, versionado para que las lecturas sigan siendo baratas | El análisis de títulos de JetBrains es genérico (heurística "A - B"), no específico del IDE |
-| Conocimiento derivado | Resúmenes de día/semana/rango (activo/ausente, por categoría/app/proyecto, primera/última actividad), cambios de contexto (>=10s de permanencia), bloques de foco (>=25 min, interrupciones <=2 min), "dónde estaba" (retomar contexto) fusionando por proyecto | — |
-| Otras fuentes | Archivos recientes vía un analizador binario de `.lnk` (Shell Link) escrito desde cero -- sin dependencia de COM; commits de git escaneados desde raíces de repositorio configuradas, filtrados por autor | El lector opcional de UI Automation para la barra de direcciones del navegador (objetivo ambicioso del spec) no se construyó: la detección de proyecto/categoría por título ya cubre el caso común, y un lector robusto multi-navegador es un proyecto en sí mismo -- se documenta aquí como descartado deliberadamente, no como olvidado |
-| Búsqueda | SQLite FTS5 sobre títulos/archivos/asuntos de commits, con resaltado de fragmentos | Recurre a búsqueda por subcadena (`LIKE`) si la build de `sqlite3` de la plataforma no tiene FTS5 (se comprueba al arrancar) -- la build de Linux usada aquí sí lo tiene; **no verificado en la build de Windows 3.13 de python.org**, ver riesgo de Windows más abajo |
-| API del agente | Solo lectura salvo `activity_pause`; cada llamada se registra y se muestra en "Actividad del asistente"; verificado con un cliente MCP real por stdio contra una app en marcha | — |
-| Interfaz | Hoy (línea de tiempo, totales, bloques de foco), Semana, Buscar, Proyectos, Archivos y commits, Reglas (con previsualización en vivo), Privacidad, Actividad del asistente; ES/EN; claro/oscuro | — |
+| Captura | Aplicación en primer plano, título de ventana, inactividad y bloqueo, muestreados cada segundo en Windows (`ctypes` + `psutil`); agrupados en tramos activo/ausente/bloqueado; la ausencia empieza cuando dejaste de usar teclado y ratón, no cuando se detecta; las suspensiones y los momentos excluidos o en pausa cierran el tramo en lugar de estirarlo; el tramo abierto se guarda cada 30 s y, si la aplicación se cae, se cierra al volver a arrancar | La sonda de Linux (`xdotool`/`xprintidle`) es solo para desarrollo; las llamadas Win32 no se han ejecutado en este entorno (ver la nota de Windows) |
+| Privacidad | Las reglas de exclusión descartan la muestra antes de guardarla (gestores de contraseñas, ventanas privadas o de incógnito, en inglés y español); las de ocultación guardan la aplicación y sustituyen el título; las reglas no válidas se rechazan en lugar de ignorarse en silencio; pausa de 15 min, 1 h o hasta reanudar, que se reanuda sola; purga por antigüedad; borrado de un rango (incluidos los tramos que lo solapan y sus entradas de búsqueda); exportación a JSON | Las reglas se aplican desde que se añaden, no a los títulos ya guardados |
+| Clasificación | Reglas ordenadas por aplicación, expresión regular del título o dominio en el título, con valores por defecto para las aplicaciones habituales de Windows; detección del proyecto en títulos de VS Code (carpetas con guiones, remotas e Insiders), JetBrains y Visual Studio, y por los nombres de los repositorios git encontrados; vista previa ("reclasificaría N tramos"); reaplicación al historial en segundo plano, con progreso | No se lee la barra de direcciones del navegador; una regla de "dominio" busca el texto en el título |
+| Conocimiento derivado | Totales por día, semana o rango, por categoría, aplicación y proyecto, recortados en los bordes del periodo; primera y última actividad; cambios de contexto (>= 10 s); bloques de concentración (>= 25 min, cada interrupción <= 2 min); "dónde estaba" con contextos distintos, su último título, archivos y commits | La concentración se mide por tiempo en ventana; no dice nada de la atención real |
+| Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
+| Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
+| API del agente | Ocho herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
+| Interfaz | Hoy (línea de tiempo con zoom, leyenda y detalle fijado), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Actividad del asistente; español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
 
-Más pantallas: [Privacidad](docs/media/privacy.png) (controles de pausa,
-reglas de exclusión/redacción, retención) · [Buscar](docs/media/search.png)
-(FTS5 con resaltado de fragmentos) · [Actividad del asistente](docs/media/assistant-activity.png)
-(cada llamada del agente, auditable).
+Más pantallas: [Buscar](docs/media/search.png) · [Privacidad](docs/media/privacy.png) ·
+[Actividad del asistente](docs/media/assistant-activity.png) (llamadas reales hechas
+a través de la API del agente por `scripts/screenshots.py`, incluida una rechazada).
 
 ## Conectarlo a Faustus
 
-La app se declara con `faustus-plugin.json`. Arráncala y en Faustus ve a
-**Conectores -> Apps cercanas -> Añadir**.
+La aplicación se declara con `faustus-plugin.json`. Arráncala y, en
+Faustus, ve a **Connectors -> Nearby apps -> Add**.
 
 | Herramienta | Qué hace | ¿Solo lectura? |
 | --- | --- | --- |
-| `activity_now` | App/título/proyecto actual, segundos de inactividad, estado de grabación | sí |
-| `activity_where_was_i` | Retomar contexto: últimos contextos de trabajo antes de un momento, con archivos/commits | sí |
-| `activity_timeline` | Tramos fusionados de un rango | sí |
-| `activity_summary` | Totales de día/rango, bloques de foco, cambios de contexto | sí |
-| `activity_search` | Buscar cuándo apareció un título/archivo/commit | sí |
-| `activity_recent_files` | Archivos abiertos recientemente | sí |
-| `activity_projects` | Tiempo por proyecto, última vez, commits | sí |
-| `activity_pause` | Pausar la grabación (no puede reanudar antes, cambiar reglas, borrar ni exportar) | **no** (la única escritura) |
+| `activity_now` | Aplicación, título y proyecto actuales, segundos de inactividad, si graba o está en pausa (y hasta cuándo) | sí |
+| `activity_where_was_i` | Retomar el contexto: los últimos contextos distintos antes de un momento, con título, archivos y commits | sí |
+| `activity_timeline` | Tramos de un día o rango, paginados con `offset` | sí |
+| `activity_summary` | Totales por categoría, aplicación o proyecto, bloques de concentración y cambios de contexto | sí |
+| `activity_search` | Cuándo apareció un título, archivo o commit con ciertas palabras | sí |
+| `activity_recent_files` | Archivos abiertos hace poco | sí |
+| `activity_projects` | Tiempo por proyecto, última vez y commits | sí |
+| `activity_pause` | Pausar la grabación; nunca acorta una pausa ya puesta | **no** (la única escritura) |
 
-También funciona con cualquier cliente MCP por stdio -- ver
-[docs/MCP.md](docs/MCP.md) para la referencia completa y un ejemplo de
-configuración.
+Funciona con cualquier cliente MCP por stdio; en [docs/MCP.md](docs/MCP.md)
+están la salida de cada herramienta, los códigos de error y un ejemplo de
+configuración. La skill [`skills/where-was-i/SKILL.md`](skills/where-was-i/SKILL.md)
+le explica a un modelo local qué herramienta usar y en qué trampas no caer.
 
-## Ejecutar en local (en Windows)
+## Ejecutar en local en Windows
 
-Haz doble clic en **`Iniciar Funes's Hoard.cmd`** (o ejecuta
-`scripts\start.ps1`), que crea el venv, instala las dependencias fijadas y
-construye el frontend la primera vez, y arranca la app en
-`http://127.0.0.1:8813`.
+Haz doble clic en **`Iniciar Funes's Hoard.cmd`**. Ejecuta
+`scripts\start.ps1`, que la primera vez crea `.venv` (Python 3.11 o
+posterior, con preferencia por `C:\Python313`), instala
+`requirements-lock.txt` y compila la interfaz si falta `frontend\dist`; las
+siguientes veces solo reinstala si ha cambiado el lock. Después arranca la
+aplicación oculta, con la raíz del repositorio como carpeta de trabajo,
+espera a que responda `/api/health` y abre `http://127.0.0.1:8813`. Si ya
+estaba en marcha, simplemente la abre. **`Detener Funes's Hoard.cmd`** la
+para. `scripts\start.ps1 -Demo` la arranca con datos sintéticos.
 
 Pasos manuales:
 
@@ -72,81 +78,83 @@ cd frontend; npm ci; npm run build; cd ..
 .venv\Scripts\python -m funes_hoard
 ```
 
-Añade `--demo` para funcionar con datos sintéticos en `data-demo/` en vez
-de grabar tu escritorio real (`--data-dir` y `--no-browser` también están
-disponibles; ver `python -m funes_hoard --help`).
+Opciones: `--demo` (datos sintéticos en `data-demo/`, no se graba nada del
+escritorio), `--data-dir`, `--port`, `--no-browser`. Los datos se guardan
+en `data/` (o en `FUNES_DATA_DIR`). La aplicación solo escucha en la
+interfaz local; `--host` no acepta otra cosa.
 
 ## Arquitectura
 
-FastAPI + un hilo recolector a 1 Hz + SQLite (WAL), con lógica central pura
-y testeada (construcción de tramos, privacidad, clasificación, resúmenes)
-que nunca importa FastAPI ni sqlite. Ver
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+FastAPI, un hilo que muestrea una vez por segundo, otro hilo para
+archivos recientes, git y purga, y SQLite en modo WAL. La lógica de
+tramos, privacidad, clasificación y resúmenes es Python puro, sin FastAPI
+ni sqlite. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Pruebas
 
 ```
-.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m pytest -q          # 177 pasan en unos 30 s
+cd frontend && npm ci && npm run build  # 0 errores de TypeScript
 ```
 
-**85 pruebas pasan en unos 10 segundos**, cubriendo: fusión de tramos y
-retro-fechado de ausente/bloqueado, gestión de saltos de suspensión,
-volcado seguro ante cuelgues, exclusión de privacidad (comprobando que la
-fila nunca llega a existir) y redacción, expiración de la pausa, purga por
-retención, el analizador de `.lnk` contra un fixture construido en la
-propia prueba (un bug real -- `LocalBasePathOffset` se leía del offset de
-byte equivocado según MS-SHLLINK -- se detectó y corrigió gracias a esta
-prueba), clasificación y detección de proyecto, bloques de foco y cambios
-de contexto, parseo de palabras de fecha (hoy/ayer/esta semana/-2h), toda
-la superficie de FastAPI incluyendo el guardián anti-ataques de navegador,
-la comprobación del manifiesto, y una prueba de protocolo MCP de extremo a
-extremo que lanza `mcp_server.py` como un subproceso real contra una app en
-marcha.
-
-`npm ci && npm run build` (en `frontend/`) pasa sin ningún error de
-TypeScript.
+Cubren la agrupación en tramos, el inicio de la ausencia y del bloqueo, las
+suspensiones, los intervalos excluidos o en pausa, el guardado periódico y
+los tramos que quedan abiertos tras una caída; las reglas de privacidad
+(comprobando que la fila excluida no llega a existir) y su validación; la
+expiración de la pausa y la pausa del agente, que solo alarga; la purga y
+el borrado de rangos, incluido el índice de búsqueda; el lector de `.lnk`
+con ficheros construidos en las propias pruebas (ANSI, Unicode, sufijo,
+truncado); la detección de proyecto en títulos de editores; los bloques de
+concentración, los cambios de contexto, el recorte por periodo y "dónde
+estaba" con días simulados; las palabras de fecha en ambos idiomas y qué
+extremo del periodo representan; la búsqueda con FTS5 y con `LIKE` ante
+entradas hostiles; el filtro contra ataques desde el navegador (puertos de
+Host y Origin, origen `null`), la corrección del acceso a archivos fuera de
+la interfaz y la lista exacta de rutas del agente; la lógica de la sonda
+de Windows con las llamadas Win32 simuladas (desbordamiento del contador,
+ejecutables sin permiso); el escaneo de git con asuntos UTF-8, filtros de
+autor y sin ventanas de consola; la línea de comandos; el manifiesto; y una
+prueba de protocolo MCP que lanza `mcp_server.py` por stdio contra la
+aplicación en marcha y comprueba las palabras clave, las anotaciones, los
+errores y el registro de llamadas.
 
 ## Privacidad y límites
 
-- Solo escucha en `127.0.0.1`. Sin telemetría, sin llamadas de red salientes
-  salvo el escaneo de commits de git (`git log` local, sin red) y las
-  peticiones de esta interfaz a sí misma.
-- Las reglas de exclusión se ejecutan **antes** de que una muestra llegue a
-  escribirse en disco; esto se comprueba afirmando que la fila nunca existe,
-  no solo que se borra después.
-- El acceso de escritura del agente es exactamente una acción (pausar) y
-  nada más; las rutas enumeradas `/api/agent/<tool>` son toda la superficie
-  de cara al agente, verificado con una prueba que comprueba que cualquier
-  otra ruta de escritura bajo ese prefijo devuelve 404.
-- Los resultados están acotados (5-100 elementos según la herramienta) con
-  un indicador explícito `truncated`/`has_more`, ya que el consumidor
-  previsto es un modelo local pequeño con contexto finito.
+- Todo se queda en `data/funes.sqlite3`, en este ordenador. Sin telemetría
+  y sin uso de red; `git log` se ejecuta en local.
+- Las reglas de exclusión actúan antes de escribir la muestra; una prueba
+  comprueba que la fila no llega a existir. Los títulos ocultados nunca
+  entran en el índice de búsqueda.
+- El asistente solo ve lo que devuelven las ocho herramientas y solo puede
+  hacer una cosa: pausar (o alargar una pausa). Cada llamada aparece en
+  "Actividad del asistente".
+- Los resultados están acotados (de 5 a 40 elementos por defecto, 100 como
+  máximo) y los títulos largos se recortan, porque quien los lee es un
+  modelo local con un contexto limitado.
 
-### Límites (cosas que deliberadamente no hace)
+### Límites
 
-- No extrae el dominio del navegador a partir de títulos (poco fiable sin
-  un lector de UI Automation; se descartó en vez de entregarse a medias).
-- La purga por retención, además de los tramos, también limpia
-  `file_events` y `commits` en la misma ventana -- una ampliación
-  deliberada respecto a "solo tramos" para que "borrar mi historial"
-  signifique eso de verdad; ver `docs/ARCHITECTURE.md`.
-- La búsqueda FTS5 recurre a búsqueda por subcadena si no está disponible;
-  ver la nota de riesgo de Windows más abajo.
+- No hay lector de la barra de direcciones del navegador: el lector de UI
+  Automation opcional del plan original se descartó antes que entregarlo
+  frágil. Las reglas sobre el título cubren la mayoría de casos.
+- La purga y el borrado de rangos también eliminan `file_events` y
+  `commits` del mismo periodo, no solo los tramos: borrar el historial
+  significa borrarlo entero.
 
-### Riesgo específico de Windows no comprobable desde este entorno Linux
+### Riesgos de Windows que no se pueden comprobar desde este entorno Linux
 
-Esto se ha construido y probado en Linux (Python 3.11); el objetivo de
-producción es Windows (Python 3.13 en `C:\Python313`). Dos cosas no se han
-podido verificar aquí y conviene comprobarlas en la primera ejecución real
-en Windows:
+Construido y probado en Linux con Python 3.11; el destino es Windows con
+Python 3.13. Conviene revisarlo en la primera ejecución real:
 
-1. **Disponibilidad de SQLite FTS5** en la build de Windows 3.13 de
-   python.org. La app lo comprueba al arrancar y recurre automáticamente a
-   búsqueda por subcadena si falta (`Database.fts_available`, ver
-   `docs/ARCHITECTURE.md`), así que la búsqueda funciona de todos modos --
-   pero la *calidad* del ranking cambia.
-2. **`WindowsProbe`** (llamadas `ctypes` a `user32`/`kernel32`, más
-   `psutil`) no puede ejecutarse en absoluto en Linux; su lógica de
-   detección de inactividad y de pantalla bloqueada solo se ejercita en las
-   pruebas a través de la interfaz `Probe` con un falso, nunca contra
-   llamadas Win32 reales.
+1. **Las llamadas Win32** de `WindowsProbe` (`GetForegroundWindow`,
+   `GetLastInputInfo`, `OpenInputDesktop`) no se han ejecutado aquí. Sus
+   firmas están declaradas y la lógica que las rodea está probada con las
+   llamadas simuladas, pero el bloqueo se detecta porque `OpenInputDesktop`
+   falla en el escritorio seguro, así que un aviso de UAC también contará
+   como "bloqueado".
+2. **FTS5 en el sqlite3 de Python 3.13 de python.org**: si falta, la
+   aplicación usa búsqueda `LIKE`.
+3. **Los lanzadores de PowerShell** se han analizado y el arranque se ha
+   ejecutado con PowerShell 7 en Linux (sin `-WindowStyle Hidden`, que solo
+   existe en Windows); `stop.ps1` usa `Get-CimInstance` y
+   `Get-NetTCPConnection`, que no se han ejecutado.
