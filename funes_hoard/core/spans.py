@@ -55,11 +55,26 @@ class SpanBuilder:
         self,
         away_after_s: float = DEFAULT_AWAY_AFTER_S,
         sleep_gap_s: float = DEFAULT_SLEEP_GAP_S,
+        floor_ts: Optional[float] = None,
     ) -> None:
         self.away_after_s = away_after_s
         self.sleep_gap_s = sleep_gap_s
         self._current: Optional[Span] = None
         self._last_ts: Optional[float] = None
+        self._floor: Optional[float] = floor_ts
+
+    def raise_floor(self, ts: float) -> None:
+        """Never let a span this builder opens start before `ts`.
+
+        Recording (re)started at `ts` -- the caller passes the end of the
+        last persisted span at startup, and `interrupt()` raises it itself
+        after a pause or an excluded sample. Without a floor, a deeply idle
+        first sample back-dates its away span to `sample.ts - idle_s` with
+        nothing bounding it: on a fresh run that can land before the app
+        even existed, and on a restart during the same idle period it
+        reproduces a span that was already recorded, double-counting it.
+        """
+        self._floor = ts if self._floor is None else max(self._floor, ts)
 
     @property
     def current(self) -> Optional[Span]:
@@ -77,7 +92,15 @@ class SpanBuilder:
         kind = "locked" if s.locked else ("away" if s.idle_s >= self.away_after_s else "active")
 
         if kind == "away" and (self._current is None or self._current.kind != "away"):
-            start = max(s.ts - max(0.0, s.idle_s), self._current.start_ts if self._current else 0.0)
+            if self._current is not None:
+                lower_bound = self._current.start_ts
+            elif self._floor is not None:
+                lower_bound = self._floor
+            else:
+                # Nothing recorded yet and no floor set: this sample is the
+                # earliest thing we know about, so it cannot predate itself.
+                lower_bound = s.ts
+            start = max(s.ts - max(0.0, s.idle_s), lower_bound)
             start = min(start, s.ts)
             if self._current is not None:
                 self._current.end_ts = start
@@ -124,6 +147,9 @@ class SpanBuilder:
         if span is not None:
             gap_too_big = self._last_ts is not None and (ts - self._last_ts) > self.sleep_gap_s
             span.end_ts = max(span.end_ts, self._last_ts if gap_too_big else ts)
+            self.raise_floor(span.end_ts)
+        else:
+            self.raise_floor(ts)
         self._current = None
         self._last_ts = None
         return span

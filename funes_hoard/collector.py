@@ -70,6 +70,13 @@ class Collector:
         self.probe = probe
         self.interval_s = interval_s
         self.builder = SpanBuilder(away_after_s=float(db.get_meta("away_after_s", "120")))
+        # B2: an away span may never be back-dated before recording existed.
+        # `MAX(end_ts)` covers a restart (nothing before what was already
+        # persisted); when there is no history at all yet, the builder itself
+        # floors a first deeply-idle sample at its own timestamp.
+        last_end = db.query_one("SELECT MAX(end_ts) m FROM spans")["m"]
+        if last_end is not None:
+            self.builder.raise_floor(float(last_end))
         self._open_row_id: Optional[int] = None
         self._last_flush = 0.0
         self._thread: Optional[threading.Thread] = None

@@ -120,3 +120,54 @@ def test_close_open_on_shutdown():
     span = b.close_open(at_ts=10)
     assert span.end_ts == 10
     assert b.peek_open() is None
+
+
+# --- B2 regression: away spans must never be back-dated across the moment
+# recording (re)started -----------------------------------------------------
+def test_first_sample_ever_deeply_idle_opens_away_at_its_own_ts_not_backdated():
+    b = SpanBuilder(away_after_s=120, sleep_gap_s=9999)
+    closed = b.add_sample(s(1_800_000_000.0, idle_s=3121))
+    assert closed == []  # nothing to close, no active span was ever open
+    open_span = b.peek_open()
+    assert open_span.kind == "away"
+    assert open_span.start_ts == 1_800_000_000.0  # not backdated 3121s into the past
+
+
+def test_floor_prevents_backdating_below_the_last_persisted_span():
+    b = SpanBuilder(away_after_s=120, sleep_gap_s=9999)
+    b.raise_floor(1000.0)  # e.g. Collector's MAX(end_ts) from a previous run
+    closed = b.add_sample(s(1300.0, idle_s=3000))  # would backdate to -1700 unfloored
+    assert closed == []
+    assert b.peek_open().start_ts == 1000.0
+
+
+def test_restart_during_the_same_idle_does_not_duplicate_the_away_span():
+    # First run: idle crosses the threshold, an away span opens (back-dated
+    # to the active span's own start) and is still open at t=300.
+    b1 = SpanBuilder(away_after_s=120, sleep_gap_s=9999)
+    b1.add_sample(s(0, idle_s=0))
+    b1.add_sample(s(100, idle_s=100))
+    b1.add_sample(s(300, idle_s=300))
+    persisted_end = b1.peek_open().end_ts  # what a periodic flush would have written (300)
+
+    # App restarts mid-idle: a fresh builder, floored at what was persisted.
+    b2 = SpanBuilder(away_after_s=120, sleep_gap_s=9999, floor_ts=persisted_end)
+    closed = b2.add_sample(s(600.0, idle_s=600.0))  # still idle since real input stopped at t=0
+    assert closed == []
+    # Must continue from where the first run left off, never re-open at the
+    # original (already-recorded) start.
+    assert b2.peek_open().start_ts == persisted_end
+
+
+def test_away_after_a_pause_starts_no_earlier_than_the_pause() -> None:
+    b = SpanBuilder(away_after_s=60, sleep_gap_s=9999)
+    b.add_sample(s(1000, idle_s=0))
+    b.add_sample(s(1600, idle_s=0))
+    closed_by_pause = b.interrupt(1600.0)  # e.g. the user paused recording here
+    assert closed_by_pause.end_ts == 1600.0
+    # Resuming later with a stale idle reading must not backdate into (or
+    # before) the span the pause just closed.
+    closed = b.add_sample(s(2000.0, idle_s=500.0))  # 2000-500=1500 < 1600 unfloored
+    assert closed == []
+    assert b.peek_open().kind == "away"
+    assert b.peek_open().start_ts == 1600.0

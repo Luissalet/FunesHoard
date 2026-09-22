@@ -166,6 +166,23 @@ def test_stop_closes_at_the_last_sample_not_the_wall_clock(tmp_path):
     assert db.query_one("SELECT end_ts FROM spans")["end_ts"] == T0 + 1
 
 
+def test_restart_after_a_crash_does_not_backdate_away_before_persisted_history(tmp_path):
+    # B2: a fresh Collector must never open an away span earlier than what
+    # is already recorded -- otherwise a restart during a long idle period
+    # produces a second span covering time that was already counted.
+    db = Database(tmp_path / "data")
+    db.execute(
+        "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, open) VALUES (?, ?, 'active', 'Code.exe', '', 'x', 0)",
+        (T0, T0 + 100),
+    )
+    probe = make_probe([("Code.exe", "x", 3000, False)])  # still idle since before restart
+    c = Collector(db, probe, interval_s=1)
+    c.tick(now=T0 + 130)  # idle_s=3000 would backdate to T0-2870 unfloored
+    rows = db.query("SELECT * FROM spans WHERE kind = 'away'")
+    assert len(rows) == 1
+    assert rows[0]["start_ts"] == T0 + 100  # floored at the last persisted span's end
+
+
 def test_pause_at_least_never_shortens_or_ends_an_existing_pause(tmp_path):
     db = Database(tmp_path / "data")
     c = Collector(db, make_probe([("a", "b", 0, False)]), interval_s=1)
