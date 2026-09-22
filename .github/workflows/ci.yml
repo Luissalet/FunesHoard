@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create venv and install dependencies
+        run: |
+          python -m venv .venv
+          python -m pip install --upgrade pip
+        shell: bash
+
+      - name: Install dependencies (POSIX)
+        if: runner.os != 'Windows'
+        run: .venv/bin/pip install -r requirements-lock.txt
+        shell: bash
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: .venv\Scripts\pip install -r requirements-lock.txt
+        shell: pwsh
+
+      - name: Run tests (POSIX)
+        if: runner.os != 'Windows'
+        run: .venv/bin/python -m pytest tests/ -q
+        shell: bash
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: .venv\Scripts\python -m pytest tests/ -q
+        shell: pwsh
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build

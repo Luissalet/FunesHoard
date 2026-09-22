@@ -102,6 +102,8 @@ class Collector:
         raw = self.db.get_meta("paused_until", "")
         if not raw:
             return False
+        if raw == "inf":
+            return True  # paused until resumed: never auto-expires
         try:
             until = float(raw)
         except ValueError:
@@ -116,6 +118,10 @@ class Collector:
         until = now + minutes * 60.0
         self.db.set_meta("paused_until", str(until))
         return until
+
+    def pause_indefinitely(self) -> None:
+        """Pause until a human explicitly resumes it (no auto-expiry)."""
+        self.db.set_meta("paused_until", "inf")
 
     def tick(self, now: Optional[float] = None) -> None:
         with self._lock:

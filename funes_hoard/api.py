@@ -379,6 +379,11 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         until = collector.pause(args.minutes)
         return {"paused": True, "until": until}
 
+    @app.post("/api/privacy/pause-until-resumed")
+    def privacy_pause_indefinite():
+        collector.pause_indefinitely()
+        return {"paused": True, "until": None}
+
     @app.post("/api/privacy/resume")
     def privacy_resume():
         db.set_meta("paused_until", "")

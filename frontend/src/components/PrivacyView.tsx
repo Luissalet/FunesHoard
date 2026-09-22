@@ -1,0 +1,214 @@
+import { useEffect, useState } from "react";
+import { Download, Plus, Trash2 } from "lucide-react";
+import { api, type PrivacyRule, type StatusInfo } from "../api";
+import { STRINGS, type Lang } from "../i18n";
+import { InlineConfirm } from "./Common";
+
+export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; status: StatusInfo | null; onStatusChange: () => void }) {
+  const t = STRINGS[lang];
+  const [rules, setRules] = useState<PrivacyRule[]>([]);
+  const [retentionDays, setRetentionDays] = useState(180);
+  const [draftKind, setDraftKind] = useState<"exclude" | "redact">("exclude");
+  const [draftMatch, setDraftMatch] = useState("app");
+  const [draftPattern, setDraftPattern] = useState("");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+
+  function refresh() {
+    api.privacyRules().then((r) => setRules(r.items));
+    api.getRetention().then((r) => setRetentionDays(r.days));
+  }
+  useEffect(refresh, []);
+
+  const excludeRules = rules.filter((r) => r.kind === "exclude");
+  const redactRules = rules.filter((r) => r.kind === "redact");
+
+  async function addRule() {
+    if (!draftPattern.trim()) return;
+    await api.addPrivacyRule({ kind: draftKind, match_type: draftMatch, pattern: draftPattern.trim(), enabled: true });
+    setDraftPattern("");
+    refresh();
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="section-title">{t.privacy_status}</div>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <span className={`pill ${status?.paused ? "paused" : "recording"}`} style={{ fontSize: 14 }}>
+            <span className="dot" />
+            {status?.paused ? t.paused : t.recording}
+          </span>
+          {status?.paused ? (
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                await api.resume();
+                onStatusChange();
+              }}
+            >
+              {t.resume_now}
+            </button>
+          ) : (
+            <div className="row">
+              <button
+                className="btn"
+                onClick={async () => {
+                  await api.pause(15);
+                  onStatusChange();
+                }}
+              >
+                {t.pause_15}
+              </button>
+              <button
+                className="btn"
+                onClick={async () => {
+                  await api.pause(60);
+                  onStatusChange();
+                }}
+              >
+                {t.pause_60}
+              </button>
+              <button
+                className="btn"
+                onClick={async () => {
+                  await api.pauseUntilResumed();
+                  onStatusChange();
+                }}
+              >
+                {t.pause_until_resumed}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="section-title">{t.what_agent_can_do}</div>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>{t.agent_read_only}</p>
+      </div>
+
+      <div className="grid grid-2" style={{ marginTop: 16 }}>
+        <RuleList
+          title={t.exclude_rules}
+          rules={excludeRules}
+          onDelete={async (id) => {
+            await api.deletePrivacyRule(id);
+            refresh();
+          }}
+        />
+        <RuleList
+          title={t.redact_rules}
+          rules={redactRules}
+          onDelete={async (id) => {
+            await api.deletePrivacyRule(id);
+            refresh();
+          }}
+        />
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="section-title">{t.add_rule}</div>
+        <div className="row">
+          <select value={draftKind} onChange={(e) => setDraftKind(e.target.value as "exclude" | "redact")}>
+            <option value="exclude">{t.exclude}</option>
+            <option value="redact">{t.redact}</option>
+          </select>
+          <select value={draftMatch} onChange={(e) => setDraftMatch(e.target.value)}>
+            <option value="app">app</option>
+            <option value="title_regex">title_regex</option>
+          </select>
+          <input type="text" placeholder={t.pattern} value={draftPattern} onChange={(e) => setDraftPattern(e.target.value)} />
+          <button className="btn btn-primary" onClick={addRule}>
+            <Plus size={14} /> {t.add}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-2" style={{ marginTop: 16 }}>
+        <div className="card">
+          <div className="section-title">{t.retention}</div>
+          <div className="row">
+            <input
+              type="number"
+              value={retentionDays}
+              min={1}
+              onChange={(e) => setRetentionDays(Number(e.target.value))}
+              style={{ width: 90 }}
+            />
+            <span>{t.retention_days}</span>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                await api.setRetention(retentionDays);
+              }}
+            >
+              {t.save}
+            </button>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="section-title">{t.export_json}</div>
+          <a className="btn" href={api.exportUrl()} download>
+            <Download size={14} /> {t.export_json}
+          </a>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="section-title">{t.delete_range}</div>
+        <div className="row">
+          <label>
+            {t.delete_range_start}{" "}
+            <input type="datetime-local" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} />
+          </label>
+          <label>
+            {t.delete_range_end} <input type="datetime-local" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
+          </label>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <InlineConfirm
+            label={t.delete}
+            confirmLabel={t.confirm_button}
+            cancelLabel={t.cancel_button}
+            disabled={!rangeStart || !rangeEnd}
+            onConfirm={async () => {
+              const start = new Date(rangeStart).getTime() / 1000;
+              const end = new Date(rangeEnd).getTime() / 1000;
+              const res = await api.deleteRange(start, end);
+              setDeleteMsg(`${t.delete}: ${JSON.stringify(res.deleted)}`);
+            }}
+          />
+        </div>
+        {deleteMsg && <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>{deleteMsg}</p>}
+      </div>
+    </div>
+  );
+}
+
+function RuleList({ title, rules, onDelete }: { title: string; rules: PrivacyRule[]; onDelete: (id: number) => void }) {
+  return (
+    <div className="card">
+      <div className="section-title">{title}</div>
+      <table>
+        <tbody>
+          {rules.map((r) => (
+            <tr key={r.id}>
+              <td style={{ width: 90 }}>{r.match_type}</td>
+              <td>
+                <code>{r.pattern}</code>
+              </td>
+              <td style={{ width: 36 }}>
+                <button className="icon-button" onClick={() => onDelete(r.id)}>
+                  <Trash2 size={13} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

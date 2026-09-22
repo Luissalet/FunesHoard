@@ -96,6 +96,17 @@ def test_pause_stops_recording_and_expires_automatically(tmp_path):
     assert len(rows) == 1
 
 
+def test_pause_indefinitely_never_auto_expires(tmp_path):
+    db = Database(tmp_path / "data")
+    probe = make_probe([("Code.exe", "x - Foo - Visual Studio Code", 0, False)])
+    c = Collector(db, probe, interval_s=1)
+    c.pause_indefinitely()
+    assert c.is_paused(T0)
+    assert c.is_paused(T0 + 10 * 86400)  # ten days later, still paused
+    db.set_meta("paused_until", "")  # only an explicit resume clears it
+    assert not c.is_paused(T0 + 10 * 86400)
+
+
 def test_stop_flushes_the_open_span_closed(tmp_path):
     db = Database(tmp_path / "data")
     probe = make_probe([("Code.exe", "x - Foo - Visual Studio Code", 0, False)] * 3)
