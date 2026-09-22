@@ -3,15 +3,14 @@
 First real use of Funes's Hoard, walking every scenario in
 [USE_CASES.md](USE_CASES.md) twice: as a person in the browser (Playwright,
 1280x800 and 1920x1080, English and Spanish, screenshots read one by one)
-and as a local model over real MCP stdio. This pass records findings only;
-the fixes come in the next pass and each finding says what that fix should
-be.
+and as a local model over real MCP stdio. The findings come first, each with the fix it called for; the fixes and a
+second walk follow.
 
 ## How it was walked
 
 - **Data** (`scripts/uxtest_data.py generate`, into the gitignored
-  `data-uxtest/`): 38 git repos laid out like the user's
-  `Side projects` (6 active projects with commits over the last two
+  `data-uxtest/`): 38 git repos laid out like a developer's
+  `Side projects` folder (6 active projects with commits over the last two
   weeks, 12 old experiments, 20 clones of other people's projects with other
   authors, one with 6,000 commits, generic names such as `docs`, `chat`,
   `python`, `tools`, plus a 300-folder non-repo tree), then two weeks of
@@ -53,8 +52,8 @@ is case-sensitive, so any other capitalisation escapes it in the same way.
 boundary: Chrome names the private window only on its new-tab page, so pages
 opened in it afterwards are ordinary titles.
 
-**B2. Away time is back-dated across the start of recording.** *(UC7; known
-issue from the user's PC)* The kind is right: with the real collector and
+**B2. Away time is back-dated across the start of recording.** *(UC7; also seen
+on a real Windows PC)* The kind is right: with the real collector and
 the chat app in the foreground at 3121 s idle, the first span is `away`, never
 active, and turns into an active span only when input resumes (checked live
 with `activity_now` and the database). But the away span starts where input
@@ -73,13 +72,13 @@ pause or exclusion. Regression tests: a first sample with 3121 s idle opens
 an away span at the floor and no active span; a restart during idle does not
 overlap; an away span after a pause starts at the end of the pause.
 
-**B3. The project list drowns in repo names he never works on.** *(UC6, UC3;
+**B3. The project list drowns in repo names nobody works on.** *(UC6, UC3;
 known issue)* Every repo name found under the root becomes a project name
 matched as a word in *every* window title. With the 38-repo folder:
 `Senior Python Engineer (Remote, EU) | LinkedIn` became project `python`
 (1 h 50 min in 30 days), `Staff Engineer, Developer Tools` became `tools`,
 docs pages became `fastapi`, `react` and `llama.cpp`: five of the eleven rows
-in Projects are clones he never committed to, and the job search is counted as
+in Projects are clones never committed to, and the job search is counted as
 Python work in Today, Week, `activity_summary` and `activity_projects`. Old
 own repos with generic names (`notes`, `home`, `api`, `test`) are one title
 away from the same fate.
@@ -224,7 +223,7 @@ category, project, app; no title for redacted rows) and a range selector.
 ## Not tested
 
 - The Win32 probe itself (foreground window, `GetLastInputInfo`, lock
-  detection): only the user's live report and the faked tests cover it.
+  detection): only a live report from a real Windows PC and the faked tests cover it.
 - Windows Recent Items polling: file events were inserted directly.
 - Git process cost on Windows (it was measured on Linux at ~4 ms per spawn;
   Windows is typically an order of magnitude slower).
@@ -273,10 +272,10 @@ in this repo (see `AGENTS.md`); each commit is small and self-contained.
   another day), **C4** (no-model reason stays in English in Spanish), **C6**
   (timeline segments not keyboard-focusable) are small, purely visual
   changes best done together with a screenshot re-walk rather than blind.
-- This pass did not re-run the Playwright/agent walkthrough (`scripts/
-  ui_walkthrough.py`, `scripts/agent_walkthrough.py`): time constraints for
-  this pass called for keeping pytest, `npm run build`, the MCP protocol
-  test and the manifest test green as the bar, not a full browser re-walk.
+- The Playwright/agent walkthrough (`scripts/ui_walkthrough.py`,
+  `scripts/agent_walkthrough.py`) was not re-run after these fixes; the bar
+  was pytest, `npm run build`, the MCP protocol test and the manifest test
+  staying green, not a full browser re-walk.
   Every fix above has its own unit/integration regression test instead. A
   screenshot re-walk after the deferred UI items land would be the natural
   next step.
@@ -306,7 +305,7 @@ interface changes are checked by the walkthrough's assertions), plus
 | UC4 (person) | A8: a hit was plain text; reload lost the day, Back left the app. | Hash routes for view, day and moment; a hit opens its day with the segment pinned; reload and Back work (checked in the walkthrough). | `db73474` |
 | UC5 | A9: delete range was two bare pickers. | Last 15 min / 30 min / hour / today shortcuts; the confirmation is unchanged. | `db73474` |
 | UC8 | A10: JSON with epoch seconds only. | `GET /api/privacy/export.csv` and a From/To day range in the UI; grouping the CSV by `date` and `project` gives hours per day with stdlib `csv` alone. | `ef2d9a3`, `db73474` |
-| all | A browser reporting `en-US@posix` (headless Chromium on this box) made every date format throw and blanked the whole app. | Such a locale falls back to the default; the walkthrough opens the app once with the browser's own locale. | `db73474` |
+| all | A browser reporting `en-US@posix` (headless Chromium on Linux) made every date format throw and blanked the whole app. | Such a locale falls back to the default; the walkthrough opens the app once with the browser's own locale. | `db73474` |
 | cosmetic | C2, C3, C4, C6; "0m" for 12-second blips. | Away/locked drawn hatched with legend entries; header; English backend reason behind "Technical details"; focusable segments (Enter pins); "<1m". | `db73474` |
 
 ### Verdict per use case
@@ -338,7 +337,7 @@ interface changes are checked by the walkthrough's assertions), plus
 ### Still open
 
 - The Win32 probe, Windows Recent Items and git cost on Windows remain
-  untested from this environment (see "Not tested").
+  untested on real Windows hardware (see "Not tested").
 - The Models panel in Settings shows the backend's diagnostic reason in
   English in both languages (it is the diagnostic; the sentence above it is
   translated).

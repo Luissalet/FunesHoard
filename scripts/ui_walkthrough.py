@@ -150,7 +150,7 @@ def main() -> None:
             names = [n.strip() for n in pg.locator("table tbody tr td:first-child").all_inner_texts()]
             print(f"  projects: {names}")
             clones = {"python", "tools", "docs", "react", "fastapi", "llama.cpp", "chat", "data"}
-            check(bool(names) and not (clones & set(names)), "Projects lists only the user's projects (B3)")
+            check(bool(names) and not (clones & set(names)), "Projects lists only the user's own projects (B3)")
             shot(pg, "uc6-01-projects")
             settle(pg, "files", lambda: pg.click("text=Files & commits"))
             summary = pg.locator("text=repos found").first

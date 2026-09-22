@@ -5,7 +5,7 @@
     python scripts/uxtest_data.py serve --port 18830 [--out data-uxtest]
 
 `generate` builds, under `--out` (gitignored):
-  - `repos/Projects/`: ~40 git repos like the user's folder of independent
+  - `repos/Projects/`: ~40 git repos like a developer's folder of independent
     projects -- a handful of active projects with commits over the last two weeks,
     old experiments, clones of other people's projects (other authors, one
     with thousands of commits), generic names (`docs`, `notes`, `chat`, ...);
@@ -337,7 +337,7 @@ def serve(out: Path, port: int) -> None:
 
 
 def _owner_git_global(out: Path) -> None:
-    """Give git the user's global identity (as on his PC) without touching ~/.gitconfig."""
+    """Give git the user's global identity (as on a real PC) without touching ~/.gitconfig."""
     cfg = out / "gitconfig"
     cfg.write_text(f"[user]\n\tname = {OWNER[0]}\n\temail = {OWNER[1]}\n", encoding="utf-8")
     os.environ["GIT_CONFIG_GLOBAL"] = str(cfg)
