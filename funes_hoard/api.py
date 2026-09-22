@@ -596,10 +596,15 @@ def create_app(
         # Only the compact summary the activity_summary tool itself returns
         # (categories/apps/projects and totals, focus blocks) -- never raw
         # or redacted window titles.
-        summary = queries.agent_view(queries.activity_summary(db, day_key, None, None, "category"))
+        summary = queries.agent_view(queries.activity_summary(db, day_key, None, None, "all"))
+        if not summary["active_s"]:
+            # Nothing to narrate: asking the model anyway would only get an
+            # invented day back, and caching it would make it look real.
+            raise BadInput("no_activity", f"Nothing was recorded on {day_key}, so there is no day to write about.")
         try:
             result = await app.state.link.chat(
-                backend.build_narrative_messages(summary), capability="llm", max_tokens=220, temperature=0.4,
+                backend.build_narrative_messages(summary), capability="llm",
+                max_tokens=backend.NARRATIVE_MAX_TOKENS, temperature=0.4,
             )
         except Unavailable as exc:
             reasons = "; ".join(exc.reasons) if exc.reasons else "no reason recorded"
@@ -610,6 +615,12 @@ def create_app(
             ) from exc
         except BackendError as exc:
             raise BadInput("llm_error", f"The language model call failed: {exc}") from exc
+        if not result.text.strip():
+            raise BadInput(
+                "llm_empty",
+                f"The language model ({result.model or 'unknown model'}) returned no text -- a reasoning model can "
+                "spend its whole budget thinking. Try again, or pick a non-reasoning model in Settings.",
+            )
 
         generated_at = time.time()
         db.execute(

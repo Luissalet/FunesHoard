@@ -19,6 +19,11 @@ from funes_hoard.hoard_link import LinkConfig
 APP_ID = "funes"
 BACKEND_FILE = "backend.json"
 
+# The answer itself is 2-4 sentences, but a reasoning model counts its
+# hidden thinking against the same budget (Hoard Link strips it from the
+# text); a tight cap would leave nothing but reasoning and an empty answer.
+NARRATIVE_MAX_TOKENS = 1024
+
 NARRATIVE_SYSTEM = (
     "You turn a compact summary of one day's computer activity into a short "
     "narrative for the person who lived it: second person, neutral and "

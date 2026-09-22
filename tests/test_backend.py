@@ -221,3 +221,65 @@ def test_backend_routes_are_not_part_of_the_agent_surface(app_link):
     for p in ("/api/backend", "/api/backend/config", "/api/backend/recheck", "/api/day-narrative", "/api/settings/write-my-day"):
         assert p in paths
         assert not p.startswith("/api/agent/")
+
+
+def test_day_narrative_prompt_includes_apps_and_projects(app_link):
+    client, link, _ = app_link
+    link.resolution = resolved_llm()
+    link.chat_result = chat_text("A narrative.")
+    client.post("/api/day-narrative", json={"day": "yesterday"})
+    payload = json.loads(link.chat_calls[0][1]["content"])
+    # The system prompt tells the model to use app and project names, so
+    # they must actually be in the data it gets.
+    assert payload["by_app"] and payload["by_project"]
+
+
+def test_day_narrative_with_no_activity_never_calls_the_model(app_link):
+    client, link, _ = app_link
+    link.resolution = resolved_llm()
+    link.chat_result = chat_text("An invented day.")
+    r = client.post("/api/day-narrative", json={"day": "2020-01-01"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "no_activity"
+    assert link.chat_calls == []
+    assert client.get("/api/day-narrative", params={"day": "2020-01-01"}).json()["text"] is None
+
+
+def test_day_narrative_empty_model_answer_is_not_cached(app_link):
+    client, link, _ = app_link
+    link.resolution = resolved_llm()
+    link.chat_result = chat_text("   ")
+    r = client.post("/api/day-narrative", json={"day": "yesterday"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "llm_empty"
+    assert client.get("/api/day-narrative", params={"day": "yesterday"}).json()["text"] is None
+
+
+def test_day_narrative_through_the_real_link_over_http(demo_data_dir, monkeypatch):
+    """The real Hoard Link (explicit HOARD_LLM_URL) against a mocked
+    OpenAI-compatible server: the request that leaves the app, and the
+    reasoning Hoard Link strips from what gets cached."""
+    import httpx
+
+    from funes_hoard.hoard_link import Link
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/chat/completions"
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {
+            "role": "assistant", "content": "<think>short plan</think>You spent most of the day on Atlas."}}]})
+
+    monkeypatch.setenv("HOARD_LLM_URL", "http://127.0.0.1:18899/v1")
+    monkeypatch.setenv("HOARD_LLM_MODEL", "test-model")
+    client_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    app = create_app(demo_data_dir, None, demo=True, port=PORT, link_factory=lambda cfg: Link(cfg, client=client_http))
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
+        status = c.get("/api/backend").json()["capabilities"]["llm"]
+        assert status["state"] == "resolved" and status["model"] == "test-model"
+        body = c.post("/api/day-narrative", json={"day": "yesterday"}).json()
+    assert body["text"] == "You spent most of the day on Atlas."
+    assert body["model"] == "test-model"
+    assert len(seen) == 1 and seen[0]["model"] == "test-model"
+    assert seen[0]["messages"][0]["role"] == "system"
