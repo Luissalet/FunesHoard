@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Luissalet" }]
+urls = { Repository = "https://github.com/Luissalet/FunesHoard" }
 dependencies = [
     "fastapi==0.115.6",
     "uvicorn==0.32.1",

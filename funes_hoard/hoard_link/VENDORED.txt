@@ -1,5 +1,4 @@
 Vendored from HoardLink (https://github.com/Luissalet/HoardLink), version 0.1.0
-Source commit: 8395198
 
 Do not edit; replace the whole folder to update.
 
