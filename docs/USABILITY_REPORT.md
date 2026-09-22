@@ -231,3 +231,50 @@ category, project, app; no title for redacted rows) and a range selector.
 - "Write my day" with a real model (none was reachable), and Faustus's own
   notes tool in UC3 (the note was composed, not saved).
 - The PowerShell launchers and the dark theme.
+
+## Fix pass: what changed and why
+
+Every commit below adds regression tests and keeps pytest, `npm run build`,
+the MCP protocol test and the manifest test green (test count 205 -> 251).
+Git identity, trailers and message rules follow CONTRACT.md §0 as in every
+other commit in this repo; each commit is small and self-contained.
+
+| # | Fix | Commit |
+|---|---|---|
+| B1 | Default exclude/redact regexes are now `(?i)` and accent-tolerant (`inc[oó]gnito`, `iniciar sesi[oó]n`); a version-gated migration in `db.py` upgrades an existing database's still-unmodified defaults, never a user's own edits. | `cea6a59` |
+| B2 | `SpanBuilder` gets a `raise_floor()` a span may never start before; `interrupt()` raises it itself after a pause/exclusion, and `Collector` raises it once at startup from `MAX(end_ts)`. Fixes the 52-minute-early away span, the restart duplicate, and the pause-crossing case. | `a3af50d` |
+| B3 | A repo only counts as a project (matched as a word in every title) while it has a commit by the configured/own author within the last 90 days -- a clone of someone else's project never earns one; `known_repos` (git_watch) and `_known_repo_names` (collector) both apply the same cutoff. | `6c56bc9` |
+| A1 | A repo whose refs (HEAD/packed-refs/logs/refs) have not changed since its last scan is skipped entirely (a stat, no subprocess); `--since` is capped to the retention window; a timed-out scan leaves its checkpoint alone so it is retried; a repo's commit rows are inserted in one transaction. `Database.query`/`query_one` also stopped committing on a plain read (sqlite3's `with conn:` does that unconditionally). | `8c3f025` |
+| A2 | `POST /api/commit-repos` rejects a non-folder with `400 bad_path` and kicks off a background scan immediately; the UI shows "N repos found, last scanned HH:MM" per root. | `8d75166` |
+| A5 | Weekday names (English/Spanish, with or without a prefix) resolve to the most recent past occurrence of that day; "this morning"/"esta mañana"; a bare `HH:MM`. Dropped the "before lunch"/"antes de comer" keyword that nothing ever parsed. | `01ab1cd` |
+| A7 | `activity_summary`'s `by_category`/`by_app`/`by_project` now have a `by_*_human` sibling map. | `a1868d4` |
+| C5 | Faustus.exe (Coding) and Microsoft.Photos.exe (Media) added to the default classify rules, with the same kind of version-gated migration as B1. | `a1868d4` |
+| C7 | The mcp SDK's own "Processing request of type ..." INFO log is silenced, the same way httpx's already was. | `a1868d4` |
+| C1 | A closed span with zero duration (the active-span-swallowed-by-backdate stub) is deleted/never inserted instead of showing up as a "0m" row and, if active, in the search index. | `12b72c6` |
+| A3 | The collector looks up the foreground span's category before deciding away: Meetings/Media get a separate, longer idle threshold (default 30 min, configurable in Settings and via `GET`/`PUT /api/settings/meetings-away`) instead of the ordinary 2 minutes. | `0909131` |
+| A4 | `where_was_i` skips Media/Communication/Games by default and ranks a context with a known project ahead of a bare app name; `all_categories=true` on `activity_where_was_i` restores the old behaviour. | `7e84129` |
+| A6 | `activity_timeline`'s default `limit` is 20 (was 40); leaving `min_minutes` unset now picks 2 min for a day or less and 5 min beyond that, instead of always 2. | `eb958ca` |
+| C9 | `activity_projects` items now carry `last_touched_human` next to the epoch value. | `eb958ca` |
+| C8 | Folded into B1: `iniciar sesi[oó]n` added as a default redact rule. | `cea6a59` |
+
+### Left for a later pass, and why
+
+- **A8 (search hits cannot be traced to their surroundings)** and **A9
+  (delete-range presets)** and **A10 (CSV export + a range picker in the
+  UI)** are UI/UX additions (click-through routing, preset buttons, a new
+  export format) rather than bug fixes; none is a blocker or a regression,
+  and each is sized for its own pass with its own screenshots.
+- **A4's UI half** -- a "Where was I?" card on Today -- is not built; the
+  ranking/filtering fix (this pass) is what a UI card would call, so adding
+  the card is now a small, isolated follow-up.
+- **C2** (away drawn like "not recording"), **C3** (header says "Today" on
+  another day), **C4** (no-model reason stays in English in Spanish), **C6**
+  (timeline segments not keyboard-focusable) are small, purely visual
+  changes best done together with a screenshot re-walk rather than blind.
+- This pass did not re-run the Playwright/agent walkthrough (`scripts/
+  ui_walkthrough.py`, `scripts/agent_walkthrough.py`): the shared cloud
+  environment for this task (2 CPUs, other agents on sibling apps) asked
+  for pytest, `npm run build`, the MCP protocol test and the manifest test
+  as the bar to keep green, not a full browser re-walk. Every fix above has
+  its own unit/integration regression test instead. A screenshot re-walk
+  after the deferred UI items land would be the natural next step.

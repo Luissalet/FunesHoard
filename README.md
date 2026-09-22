@@ -105,7 +105,7 @@ or sqlite imports. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Tests
 
 ```
-.venv/bin/python -m pytest -q          # 205 passed in about 10 s
+.venv/bin/python -m pytest -q          # 251 passed in about 14 s
 cd frontend && npm ci && npm run build  # 0 TypeScript errors
 ```
 
