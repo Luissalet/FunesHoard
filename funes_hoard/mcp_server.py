@@ -142,10 +142,11 @@ def activity_summary(
 @mcp.tool(annotations=_READ)
 def activity_search(query: str, since: Optional[str] = None, until: Optional[str] = None, limit: int = 10) -> dict:
     """Find when a window title, opened file path or commit subject containing
-    the words in `query` appeared, newest first. Every word must match (word
-    prefixes count: "duck" finds "DuckDB"); punctuation is ignored. Each hit
-    has `source` (span/file/commit), `ref_id`, `when` ("yesterday 16:05") and
-    a short `text` with the match in [brackets]. `since`/`until` accept day
+    the words in `query` appeared, newest first. Word prefixes count ("duck"
+    finds "DuckDB") and punctuation is ignored. All words must match; if none
+    do, any word is tried and `matched` says "any word". Each hit has
+    `source` (span/file/commit), `ref_id`, `when` ("yesterday 16:05") and a
+    short `text` with the match in [brackets]. `since`/`until` accept day
     words ("since": "ayer" = from yesterday 00:00) or ISO dates. `limit` max 100.
     Keywords: search, find when, when did I see, that page about, that file called, that commit, buscar, cuándo vi, cuando abrí, esa página sobre, ese archivo llamado, ese commit.
     """

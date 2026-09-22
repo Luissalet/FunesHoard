@@ -198,28 +198,64 @@ def activity_summary(
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
 
-def fts_match_expression(query: str) -> str:
+def fts_match_expression(query: str, any_word: bool = False) -> str:
     """Turn free text into a safe FTS5 expression.
 
     Raw user/model text is not valid FTS5 syntax in general (`funes-hoard`,
     `C++`, a stray quote, a bare `AND` all raise). Every word becomes a
-    quoted prefix term and all terms must match.
+    quoted prefix term; all terms must match unless `any_word`.
     """
     tokens = _TOKEN_RE.findall(query)
-    return " ".join('"' + t.replace('"', '""') + '"*' for t in tokens)
+    return (" OR " if any_word else " ").join('"' + t.replace('"', '""') + '"*' for t in tokens)
 
 
 def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _search_rows(db: Database, query: str, since_ts: float, until_ts: float, limit: int, marks: tuple, any_word: bool, now: float) -> List[dict]:
+    items: List[dict] = []
+    if getattr(db, "fts_available", False):
+        rows = db.query(
+            "SELECT source, ref_id, ts, text, snippet(search_fts, 0, ?, ?, '...', 12) AS snip"
+            " FROM search_fts WHERE search_fts MATCH ? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+            (marks[0], marks[1], fts_match_expression(query, any_word), since_ts, until_ts, limit + 1),
+        )
+        for r in rows:
+            items.append({"source": r["source"], "ref_id": r["ref_id"], "ts": r["ts"],
+                          "when": human_moment(r["ts"], now), "text": r["snip"] or r["text"]})
+        return items
+    words = _TOKEN_RE.findall(query)
+    joiner = " OR " if any_word else " AND "
+    clauses = {}
+    params: Dict[str, list] = {}
+    for table, col in (("spans", "title"), ("file_events", "path"), ("commits", "subject")):
+        clauses[table] = "(" + joiner.join(f"{col} LIKE ? ESCAPE '\\'" for _ in words) + ")"
+        params[table] = [f"%{_like_escape(w)}%" for w in words]
+    rows = db.query(
+        "SELECT 'span' src, id, start_ts ts, title text FROM spans WHERE " + clauses["spans"]
+        + " AND kind = 'active' AND title != '[redacted]' AND start_ts >= ? AND start_ts < ?"
+        " UNION ALL SELECT 'file', id, ts, path FROM file_events WHERE " + clauses["file_events"] + " AND ts >= ? AND ts < ?"
+        " UNION ALL SELECT 'commit', id, ts, subject FROM commits WHERE " + clauses["commits"] + " AND ts >= ? AND ts < ?"
+        " ORDER BY ts DESC LIMIT ?",
+        (*params["spans"], since_ts, until_ts, *params["file_events"], since_ts, until_ts,
+         *params["commits"], since_ts, until_ts, limit + 1),
+    )
+    for r in rows:
+        items.append({"source": r["src"], "ref_id": r["id"], "ts": r["ts"],
+                      "when": human_moment(r["ts"], now), "text": r["text"]})
+    return items
+
+
 def activity_search(
     db: Database, query: str, since: Optional[str], until: Optional[str], limit: int,
     now: Optional[float] = None, marks: tuple = ("[", "]"),
 ) -> dict:
-    """`marks` wrap the matched words in the snippet: readable brackets for
-    the model; the UI asks for control characters that cannot collide with
-    brackets that are really in a title."""
+    """Newest matches first. All words must match; when that finds nothing
+    and the query has several words, fall back to any word and say so in
+    `matched`. `marks` wrap the matched words in the snippet: readable
+    brackets for the model; the UI asks for control characters that cannot
+    collide with brackets that are really in a title."""
     now = now if now is not None else time.time()
     query = (query or "").strip()
     if not _TOKEN_RE.search(query):
@@ -227,31 +263,13 @@ def activity_search(
     since_ts = parse_moment(since, now, "start") if since else 0.0
     until_ts = parse_moment(until, now, "end") if until else now + 1
     limit = max(1, min(limit, MAX_LIMIT))
-    items: List[dict] = []
-    if getattr(db, "fts_available", False):
-        rows = db.query(
-            "SELECT source, ref_id, ts, text, snippet(search_fts, 0, ?, ?, '...', 12) AS snip"
-            " FROM search_fts WHERE search_fts MATCH ? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?",
-            (marks[0], marks[1], fts_match_expression(query), since_ts, until_ts, limit + 1),
-        )
-        for r in rows:
-            items.append({"source": r["source"], "ref_id": r["ref_id"], "ts": r["ts"],
-                          "when": human_moment(r["ts"], now), "text": r["snip"] or r["text"]})
-    else:
-        like = f"%{_like_escape(query)}%"
-        rows = db.query(
-            "SELECT 'span' src, id, start_ts ts, title text FROM spans WHERE title LIKE ? ESCAPE '\\' AND kind = 'active'"
-            " AND title != '[redacted]' AND start_ts >= ? AND start_ts < ?"
-            " UNION ALL SELECT 'file', id, ts, path FROM file_events WHERE path LIKE ? ESCAPE '\\' AND ts >= ? AND ts < ?"
-            " UNION ALL SELECT 'commit', id, ts, subject FROM commits WHERE subject LIKE ? ESCAPE '\\' AND ts >= ? AND ts < ?"
-            " ORDER BY ts DESC LIMIT ?",
-            (like, since_ts, until_ts, like, since_ts, until_ts, like, since_ts, until_ts, limit + 1),
-        )
-        for r in rows:
-            items.append({"source": r["src"], "ref_id": r["id"], "ts": r["ts"],
-                          "when": human_moment(r["ts"], now), "text": r["text"]})
+    matched = "all words"
+    items = _search_rows(db, query, since_ts, until_ts, limit, marks, False, now)
+    if not items and len(_TOKEN_RE.findall(query)) > 1:
+        items = _search_rows(db, query, since_ts, until_ts, limit, marks, True, now)
+        matched = "any word"
     truncated = len(items) > limit
-    return {"query": query, "items": items[:limit], "truncated": truncated, "has_more": truncated}
+    return {"query": query, "matched": matched, "items": items[:limit], "truncated": truncated, "has_more": truncated}
 
 
 def recent_commits(db: Database, since: Optional[str], limit: int, now: Optional[float] = None) -> dict:
