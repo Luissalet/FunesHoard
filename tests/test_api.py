@@ -364,8 +364,12 @@ def test_spans_csv_export_is_analysis_ready(client):
 def test_spans_csv_export_honours_the_range_and_keeps_redaction(client):
     everything = client.get("/api/privacy/export.csv").text.count("\n")
     assert client.get("/api/privacy/export.csv", params={"start": 0, "end": 1}).text.count("\n") == 1 < everything
+    import time
+
     db = client.app.state.db
-    t = 1_000_000.0
+    # Inside the 180-day retention (the startup purge runs in the background
+    # and would delete an older row mid-test), far from the demo days.
+    t = time.time() - 170 * 86400
     db.execute(
         "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, category, open)"
         " VALUES (?, ?, 'active', 'chrome.exe', '', '[redacted]', 'Browsing', 0)", (t, t + 300),
