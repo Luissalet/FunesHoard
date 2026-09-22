@@ -132,3 +132,42 @@ def test_human_range_whole_day_and_cross_day():
 def test_human_range_for_a_week_uses_absolute_dates():
     start, end = parse_day_or_range("this week", None, None, NOW)
     assert human_range(start, end, now=NOW) == "Mon 2026-03-09 to Sun 2026-03-15 (7 days)"
+
+
+# --- A5: everyday time words ------------------------------------------------
+def test_weekday_names_mean_the_most_recent_past_occurrence():
+    # NOW is Sunday 2026-03-15. "martes"/"tuesday" -> 2026-03-10.
+    for word in ("martes", "el martes", "tuesday", "last tuesday", "Tuesday"):
+        start, end = parse_day_or_range(word, None, None, NOW)
+        assert (start, end) == (_midnight(2026, 3, 10), _midnight(2026, 3, 11)), word
+
+
+def test_weekday_name_never_resolves_to_today_even_if_it_matches():
+    # NOW is a Sunday: "domingo"/"sunday" must mean last Sunday, a week ago.
+    for word in ("domingo", "sunday"):
+        start, _ = parse_day_or_range(word, None, None, NOW)
+        assert start == _midnight(2026, 3, 8), word
+
+
+def test_this_morning_is_the_first_half_of_today():
+    for word in ("this morning", "esta mañana"):
+        start, end = parse_day_or_range(word, None, None, NOW)
+        assert start == _midnight(2026, 3, 15)
+        assert end == _midnight(2026, 3, 15) + 12 * 3600
+
+
+def test_bare_time_of_day_means_today_at_that_time():
+    ts = parse_moment("14:30", NOW)
+    assert datetime.fromtimestamp(ts) == datetime(2026, 3, 15, 14, 30, 0)
+    ts2 = parse_moment("08:05", NOW)
+    assert datetime.fromtimestamp(ts2) == datetime(2026, 3, 15, 8, 5, 0)
+
+
+def test_before_lunch_is_no_longer_advertised_in_the_mcp_tool_keywords():
+    # mcp_server.py is a standalone script (see its own module docstring)
+    # deliberately not imported by anything else -- read its source instead.
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent / "funes_hoard" / "mcp_server.py").read_text(encoding="utf-8")
+    assert "before lunch" not in source
+    assert "antes de comer" not in source

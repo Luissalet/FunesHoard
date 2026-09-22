@@ -33,11 +33,29 @@ _YESTERDAY_WORDS = {"yesterday", "ayer"}
 _THIS_WEEK_WORDS = {"this week", "esta semana"}
 _LAST_WEEK_WORDS = {"last week", "la semana pasada", "semana pasada"}
 _THIS_MONTH_WORDS = {"this month", "este mes"}
+_MORNING_WORDS = {"this morning", "esta mañana", "esta manana"}
+
+# A5: a bare or prefixed weekday name always means the most recent PAST
+# occurrence of that day (never today, even if today is that weekday) --
+# "el martes", "last tuesday", "martes" and "tuesday" all resolve the same
+# way. Both languages, with and without accents.
+_WEEKDAYS = {
+    "monday": 0, "mon": 0, "lunes": 0,
+    "tuesday": 1, "tue": 1, "martes": 1,
+    "wednesday": 2, "wed": 2, "miercoles": 2, "miércoles": 2,
+    "thursday": 3, "thu": 3, "jueves": 3,
+    "friday": 4, "fri": 4, "viernes": 4,
+    "saturday": 5, "sat": 5, "sabado": 5, "sábado": 5,
+    "sunday": 6, "sun": 6, "domingo": 6,
+}
+_WEEKDAY_PREFIXES = ("el ", "the ", "last ", "past ", "pasado ", "pasada ")
+_TIME_OF_DAY_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 ACCEPTED_HINT = (
     "Use an ISO date/datetime (2026-09-22, 2026-09-22T14:30), today/hoy, "
-    "yesterday/ayer, 'this week'/'esta semana', 'last week', or a relative "
-    "offset like -2h, -3d, -30m."
+    "yesterday/ayer, 'this week'/'esta semana', 'last week', a weekday name "
+    "(martes, last tuesday), 'this morning'/'esta mañana', a time today "
+    "(14:30), or a relative offset like -2h, -3d, -30m."
 )
 
 
@@ -65,6 +83,21 @@ def _month_bounds(d: date) -> Tuple[float, float]:
     return _midnight(first), _midnight(nxt)
 
 
+def _weekday_index(text: str) -> Optional[int]:
+    stripped = text
+    for prefix in _WEEKDAY_PREFIXES:
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix):]
+            break
+    return _WEEKDAYS.get(stripped)
+
+
+def _most_recent_weekday(today: date, weekday_idx: int) -> date:
+    delta = (today.weekday() - weekday_idx) % 7
+    delta = delta or 7  # never today itself, even if today is that weekday
+    return today - timedelta(days=delta)
+
+
 def _named_range(text: str, now: float) -> Optional[Tuple[float, float]]:
     """Bounds for a word or plain date that names a whole period, else None."""
     today = datetime.fromtimestamp(now).date()
@@ -78,6 +111,12 @@ def _named_range(text: str, now: float) -> Optional[Tuple[float, float]]:
         return _week_bounds(today - timedelta(days=7))
     if text in _THIS_MONTH_WORDS:
         return _month_bounds(today)
+    if text in _MORNING_WORDS:
+        start = _midnight(today)
+        return start, start + 12 * 3600
+    weekday_idx = _weekday_index(text)
+    if weekday_idx is not None:
+        return _day_bounds(_most_recent_weekday(today, weekday_idx))
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         try:
             return _day_bounds(date.fromisoformat(text))
@@ -111,6 +150,10 @@ def parse_moment(value: Optional[str], now: float, edge: Edge = "point") -> floa
     if m:
         amount, unit = m.groups()
         return now - float(amount) * _UNIT_SECONDS[unit.lower()]
+    tm = _TIME_OF_DAY_RE.match(text)
+    if tm:
+        hour, minute = int(tm.group(1)), int(tm.group(2))
+        return datetime.fromtimestamp(now).replace(hour=hour, minute=minute, second=0, microsecond=0).timestamp()
     raw = value.strip()
     try:
         if raw.endswith(("Z", "z")):

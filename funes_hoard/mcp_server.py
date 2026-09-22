@@ -98,8 +98,9 @@ def activity_where_was_i(before: Optional[str] = None, contexts: int = 5) -> dic
     no project is known) with its last window title, time range (`human`),
     duration, up to 5 files opened and 5 commits made meanwhile. Away/locked
     time and alt-tab blips are skipped. `before` defaults to now; "yesterday"/
-    "ayer" means the end of yesterday, "-2h" two hours ago. `contexts` 1-20.
-    Keywords: where was I, where did I leave off, resume, what was I working on, before lunch, dónde estaba, donde lo dejé, en qué estaba trabajando, retomar, contexto, antes de comer.
+    "ayer" means the end of yesterday, "-2h" two hours ago, a weekday name
+    ("martes", "last tuesday") means that whole day. `contexts` 1-20.
+    Keywords: where was I, where did I leave off, resume, what was I working on, this morning, dónde estaba, donde lo dejé, en qué estaba trabajando, retomar, contexto, esta mañana.
     """
     return _post("/api/agent/activity_where_was_i", {"before": before, "contexts": contexts})
 
