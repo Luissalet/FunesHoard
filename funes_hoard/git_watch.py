@@ -99,10 +99,13 @@ def scan_repo(
     should be retried later; `[]` means it ran fine and found nothing new
     -- the poller must tell these apart to know whether it is safe to move
     this repo's checkpoint forward (A1)."""
-    since_arg = f"--since=@{int(since_ts)}" if since_ts else "--since=1970-01-01"
+    # No checkpoint means "all history": leave --since out rather than pass
+    # a 1970 date, which git reads in local time and so filters out every
+    # commit in a timezone ahead of UTC.
+    since_args = [f"--since=@{int(since_ts)}"] if since_ts else []
     try:
         out = run(
-            ["git", "log", "--all", since_arg, f"--format={_LOG_FORMAT}"],
+            ["git", "log", "--all", *since_args, f"--format={_LOG_FORMAT}"],
             cwd=str(repo_path), **_subprocess_kwargs(),
         )
     except Exception:

@@ -50,6 +50,16 @@ def test_scan_repo_matches_configured_author(tmp_path):
     assert events[0].subject == "feat: mine"
 
 
+def test_scan_repo_without_checkpoint_sees_all_history_ahead_of_utc(tmp_path, monkeypatch):
+    # git reads a plain --since date in local time: "1970-01-01" in a
+    # timezone ahead of UTC is before the epoch and matched nothing.
+    repo = tmp_path / "atlas"
+    _init_repo(repo, "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
+    monkeypatch.setenv("TZ", "UTC-14")  # POSIX spelling of UTC+14
+    events = scan_repo(repo, since_ts=0, author_filters=[])
+    assert [e.subject for e in events] == ["feat: mine"]
+
+
 def test_git_poller_persists_commits(tmp_path):
     repo_root = tmp_path / "projects"
     repo = repo_root / "atlas"
