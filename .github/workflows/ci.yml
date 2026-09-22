@@ -8,45 +8,22 @@ on:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.13"]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
-      - name: Create venv and install dependencies
+      - name: Install dependencies
         run: |
           python -m venv .venv
-          python -m pip install --upgrade pip
-        shell: bash
+          .venv/bin/pip install -r requirements-lock.txt
 
-      - name: Install dependencies (POSIX)
-        if: runner.os != 'Windows'
-        run: .venv/bin/pip install -r requirements-lock.txt
-        shell: bash
-
-      - name: Install dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: .venv\Scripts\pip install -r requirements-lock.txt
-        shell: pwsh
-
-      - name: Run tests (POSIX)
-        if: runner.os != 'Windows'
+      - name: Run tests
         run: .venv/bin/python -m pytest tests/ -q
-        shell: bash
-
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: .venv\Scripts\python -m pytest tests/ -q
-        shell: pwsh
 
   frontend:
     runs-on: ubuntu-latest

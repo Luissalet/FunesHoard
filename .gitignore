@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/
-data-demo/
+data-*/
 node_modules/
 frontend/dist/
 *.tsbuildinfo
@@ -12,4 +12,3 @@ frontend/dist/
 test-results/
 .mypy_cache/
 docs/media/*.tmp.png
-data-uxtest/
