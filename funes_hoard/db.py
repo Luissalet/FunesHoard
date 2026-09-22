@@ -90,6 +90,15 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS day_narratives (
+    day TEXT PRIMARY KEY,
+    day_start_ts REAL NOT NULL,
+    text TEXT NOT NULL,
+    model TEXT,
+    generated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_day_narratives_start ON day_narratives(day_start_ts);
 """
 
 DEFAULT_META = {
@@ -98,6 +107,7 @@ DEFAULT_META = {
     "retention_days": "180",
     "paused_until": "",
     "sample_interval_s": "1",
+    "write_my_day_enabled": "1",
 }
 
 

@@ -68,3 +68,33 @@ def test_retention_purges_the_search_index_too(tmp_path):
     run_retention(db, now=NOW)
     if db.fts_available:
         assert db.query("SELECT * FROM search_fts WHERE search_fts MATCH 'diary'") == []
+
+
+def _insert_narrative(db, day: str, day_start_ts: float) -> None:
+    db.execute(
+        "INSERT INTO day_narratives(day, day_start_ts, text, model, generated_at) VALUES (?, ?, ?, ?, ?)",
+        (day, day_start_ts, "You spent the day coding.", "qwen", day_start_ts + 3600),
+    )
+
+
+def test_run_retention_purges_old_day_narratives(tmp_path):
+    db = Database(tmp_path / "data")
+    db.set_meta("retention_days", "180")
+    _insert_narrative(db, "old-day", NOW - 200 * 86400)
+    _insert_narrative(db, "recent-day", NOW - 5 * 86400)
+    counts = run_retention(db, now=NOW)
+    assert counts["day_narratives"] == 1
+    remaining = [r["day"] for r in db.query("SELECT day FROM day_narratives")]
+    assert remaining == ["recent-day"]
+
+
+def test_delete_range_purges_a_narrative_whose_day_overlaps_the_range(tmp_path):
+    db = Database(tmp_path / "data")
+    _insert_narrative(db, "target-day", NOW)
+    _insert_narrative(db, "other-day", NOW - 20 * 86400)
+    # A narrow range that only touches part of the day still removes it:
+    # the cached text was generated from the whole day's now-partially-deleted data.
+    counts = delete_range(db, NOW + 3600, NOW + 3660)
+    assert counts["day_narratives"] == 1
+    remaining = [r["day"] for r in db.query("SELECT day FROM day_narratives")]
+    assert remaining == ["other-day"]

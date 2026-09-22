@@ -13,6 +13,7 @@ import re
 import sys
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlsplit
@@ -24,16 +25,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from funes_hoard import __version__, queries
+from funes_hoard import __version__, backend, queries
 from funes_hoard.collector import Collector, _known_repo_names
 from funes_hoard.core.classify import CATEGORIES, ClassifyRule, classify
 from funes_hoard.db import Database
 from funes_hoard.errors import BadInput
 from funes_hoard.git_watch import GitCommitsPoller, configured_authors
+from funes_hoard.hoard_link import BackendError, Link, Unavailable
 from funes_hoard.jobs import JobManager
 from funes_hoard.recent_files import RecentFilesPoller, windows_recent_dir
 from funes_hoard.retention import delete_range, run_retention
 from funes_hoard.scheduler import BackgroundScheduler
+from funes_hoard.timeparse import parse_day_or_range
 
 SERVICE = "funes-hoard"
 PID_FILE = "funes.pid"
@@ -164,6 +167,27 @@ class CommitAuthorsIn(BaseModel):
     authors: list[str] = Field(default_factory=list, max_length=20)
 
 
+class BackendCapabilityIn(BaseModel):
+    url: Optional[str] = None
+    model: Optional[str] = None
+
+
+class BackendConfigIn(BaseModel):
+    only_resident: Optional[bool] = None
+    faustus_url: Optional[str] = None
+    faustus_token: Optional[str] = None
+    capabilities: dict[str, BackendCapabilityIn] = Field(default_factory=dict)
+
+
+class DayNarrativeIn(BaseModel):
+    day: Optional[str] = None
+    force: bool = False
+
+
+class FeatureToggleIn(BaseModel):
+    enabled: bool
+
+
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 AGENT_TOOLS = (
     "activity_now", "activity_where_was_i", "activity_timeline", "activity_summary",
@@ -215,10 +239,23 @@ def _validate_rule(match_type: str, pattern: str, allowed: tuple[str, ...]) -> N
             raise BadInput("bad_pattern", f"invalid regular expression: {exc}") from exc
 
 
-def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = False, port: Optional[int] = None) -> FastAPI:
+def create_app(
+    data_dir: Path,
+    static_dir: Optional[Path] = None,
+    demo: bool = False,
+    port: Optional[int] = None,
+    link=None,
+    link_factory: Optional[Callable[[object], object]] = None,
+) -> FastAPI:
+    """`link`/`link_factory` let tests inject a fake Hoard Link (or one
+    built on an `httpx.MockTransport`) so the shared-model-backend routes
+    stay offline in the suite: see `tests/test_backend.py`."""
     data_dir = Path(data_dir)
     _setup_logging(data_dir)
     db = Database(data_dir)
+    link_factory = link_factory or Link
+    if link is None:
+        link = link_factory(backend.load_link_config(data_dir))
 
     if demo:
         from funes_hoard.demo import seed_demo_data
@@ -244,6 +281,7 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         finally:
             scheduler.stop()
             collector.stop()
+            await app.state.link.aclose()
             db.close()
             _remove_own_pid_file(data_dir)
 
@@ -254,6 +292,8 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
     app.state.scheduler = scheduler
     app.state.port = port
     app.state.demo = demo
+    app.state.link = link
+    app.state.link_factory = link_factory
 
     # ------------------------------------------------------------ guard --
     @app.middleware("http")
@@ -475,6 +515,108 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
             day_str = d.isoformat()
             days.append({"date": day_str, **queries.activity_summary(db, day_str, None, None, "all")})
         return {"days": days}
+
+    # -------------------------------------------------- model backend --
+    def _write_my_day_enabled() -> bool:
+        return db.get_meta("write_my_day_enabled", "1") == "1"
+
+    def _day_bounds_key(day: Optional[str]) -> tuple[str, float]:
+        start_ts, _ = parse_day_or_range(day, None, None, time.time())
+        return datetime.fromtimestamp(start_ts).date().isoformat(), start_ts
+
+    @app.get("/api/backend")
+    async def backend_status():
+        cfg = app.state.link.config
+        return {
+            "capabilities": await app.state.link.status(),
+            "only_resident": cfg.only_resident,
+            "faustus_url": cfg.faustus_urls[0] if cfg.faustus_urls else None,
+            "faustus_token_set": bool(cfg.faustus_token),
+            "write_my_day_enabled": _write_my_day_enabled(),
+        }
+
+    @app.put("/api/backend/config")
+    def backend_config_put(body: BackendConfigIn):
+        patch = {
+            "only_resident": body.only_resident,
+            "faustus_url": body.faustus_url,
+            "faustus_token": body.faustus_token,
+            "capabilities": {k: v.model_dump() for k, v in body.capabilities.items()},
+        }
+        backend.apply_config_patch(data_dir, patch)
+        # Explicit configuration is read fresh on every resolve() (never
+        # cached), so swapping the config in place is enough -- no need to
+        # recreate the Link or touch its httpx client/probe cache.
+        app.state.link.config = backend.load_link_config(data_dir)
+        return {"saved": True, "faustus_token_set": bool(app.state.link.config.faustus_token)}
+
+    @app.post("/api/backend/recheck")
+    async def backend_recheck():
+        old = app.state.link
+        app.state.link = app.state.link_factory(old.config)
+        await old.aclose()
+        return {"ok": True}
+
+    @app.get("/api/day-narrative")
+    async def day_narrative_get(day: Optional[str] = None):
+        day_key, _ = _day_bounds_key(day)
+        row = db.query_one("SELECT * FROM day_narratives WHERE day = ?", (day_key,))
+        enabled = _write_my_day_enabled()
+        resolution = await app.state.link.resolve("llm") if enabled else None
+        return {
+            "day": day_key,
+            "text": row["text"] if row else None,
+            "model": row["model"] if row else None,
+            "generated_at": row["generated_at"] if row else None,
+            "enabled": enabled,
+            "available": bool(resolution and resolution.resolved),
+            "reason": resolution.reason if resolution is not None else None,
+        }
+
+    @app.post("/api/day-narrative")
+    async def day_narrative_generate(args: DayNarrativeIn):
+        if not _write_my_day_enabled():
+            raise BadInput("feature_disabled", '"Write my day" is turned off in Settings.')
+        day_key, day_start_ts = _day_bounds_key(args.day)
+        if not args.force:
+            row = db.query_one("SELECT * FROM day_narratives WHERE day = ?", (day_key,))
+            if row:
+                return {"day": day_key, "text": row["text"], "model": row["model"], "generated_at": row["generated_at"], "cached": True}
+
+        # Only the compact summary the activity_summary tool itself returns
+        # (categories/apps/projects and totals, focus blocks) -- never raw
+        # or redacted window titles.
+        summary = queries.agent_view(queries.activity_summary(db, day_key, None, None, "category"))
+        try:
+            result = await app.state.link.chat(
+                backend.build_narrative_messages(summary), capability="llm", max_tokens=220, temperature=0.4,
+            )
+        except Unavailable as exc:
+            reasons = "; ".join(exc.reasons) if exc.reasons else "no reason recorded"
+            raise BadInput(
+                "llm_unavailable",
+                f"No language model is available for \"Write my day\" ({reasons}). "
+                "Faustus can serve one, or load one in Ollama.",
+            ) from exc
+        except BackendError as exc:
+            raise BadInput("llm_error", f"The language model call failed: {exc}") from exc
+
+        generated_at = time.time()
+        db.execute(
+            "INSERT INTO day_narratives(day, day_start_ts, text, model, generated_at) VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(day) DO UPDATE SET text=excluded.text, model=excluded.model, generated_at=excluded.generated_at",
+            (day_key, day_start_ts, result.text, result.model, generated_at),
+        )
+        return {"day": day_key, "text": result.text, "model": result.model, "generated_at": generated_at, "cached": False}
+
+    @app.get("/api/settings/write-my-day")
+    def write_my_day_setting_get():
+        return {"enabled": _write_my_day_enabled()}
+
+    @app.put("/api/settings/write-my-day")
+    def write_my_day_setting_put(body: FeatureToggleIn):
+        db.set_meta("write_my_day_enabled", "1" if body.enabled else "0")
+        return {"enabled": body.enabled}
 
     # ----------------------------------------------------- privacy admin --
     @app.get("/api/privacy/rules")
