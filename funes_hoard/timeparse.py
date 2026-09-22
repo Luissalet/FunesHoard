@@ -183,7 +183,8 @@ def human_range(start_ts: float, end_ts: float, now: Optional[float] = None) -> 
         if days == 1:
             return f"{_day_label(sdt.date(), today)}, whole day"
         last = edt.date() - timedelta(days=1)
-        return f"{_day_label(sdt.date(), today)} to {_day_label(last, today)} ({days} days)"
+        # Absolute dates for periods: "yesterday to Sun ..." misreads a week.
+        return f"{sdt:%a} {sdt.date().isoformat()} to {last:%a} {last.isoformat()} ({days} days)"
     if sdt.date() == edt.date() or (edt - sdt) < timedelta(hours=24) and edt.time() == datetime.min.time():
         return f"{_day_label(sdt.date(), today)} {sdt:%H:%M}-{edt:%H:%M}, {duration}"
     return f"{_day_label(sdt.date(), today)} {sdt:%H:%M} to {_day_label(edt.date(), today)} {edt:%H:%M}, {duration}"

@@ -127,3 +127,8 @@ def test_human_range_whole_day_and_cross_day():
     text = human_range(_midnight(2026, 3, 14) + 23 * 3600, _midnight(2026, 3, 15) + 3600, now=NOW)
     assert text == "yesterday 23:00 to today 01:00, 2 h 00 min"
     assert human_range(NOW - 42 * 60, NOW, now=NOW) == "today 13:48-14:30, 42 min"
+
+
+def test_human_range_for_a_week_uses_absolute_dates():
+    start, end = parse_day_or_range("this week", None, None, NOW)
+    assert human_range(start, end, now=NOW) == "Mon 2026-03-09 to Sun 2026-03-15 (7 days)"
