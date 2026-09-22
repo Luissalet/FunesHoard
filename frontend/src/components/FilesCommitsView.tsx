@@ -1,73 +1,140 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { api, type CommitRepo, type FileEventItem } from "../api";
+import { api, localeFor, errorMessage, type CommitItem, type CommitRepo, type FileEventItem } from "../api";
 import { STRINGS, type Lang } from "../i18n";
 import { EmptyState } from "./Common";
 
 export function FilesCommitsView({ lang }: { lang: Lang }) {
   const t = STRINGS[lang];
   const [files, setFiles] = useState<FileEventItem[]>([]);
+  const [commits, setCommits] = useState<CommitItem[]>([]);
   const [repos, setRepos] = useState<CommitRepo[]>([]);
+  const [authors, setAuthors] = useState("");
+  const [authorsMsg, setAuthorsMsg] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   function refresh() {
-    Promise.all([api.recentFiles({ limit: 50 }), api.commitRepos()]).then(([f, r]) => {
-      setFiles(f.items);
-      setRepos(r.items);
-      setLoading(false);
-    });
+    Promise.all([api.recentFiles({ limit: 50 }), api.commitRepos(), api.commits({ limit: 30 }), api.commitAuthors()])
+      .then(([f, r, c, a]) => {
+        setFiles(f.items);
+        setRepos(r.items);
+        setCommits(c.items);
+        setAuthors(a.authors.join(", "));
+      })
+      .catch((err) => setError(errorMessage(err)))
+      .finally(() => setLoading(false));
   }
 
   useEffect(refresh, []);
 
   if (loading) return null;
+  const when = (ts: number) =>
+    new Date(ts * 1000).toLocaleString(localeFor(lang), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
   return (
     <div>
-      <div className="card">
-        <div className="section-title">{t.commit_repos}</div>
-        <div className="row" style={{ marginBottom: 12 }}>
-          <input
-            type="text"
-            placeholder={t.add_repo_path}
-            value={newPath}
-            onChange={(e) => setNewPath(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button
-            className="btn btn-primary"
-            onClick={async () => {
-              if (!newPath.trim()) return;
-              await api.addCommitRepo(newPath.trim());
-              setNewPath("");
-              refresh();
-            }}
-          >
-            <Plus size={14} /> {t.add}
-          </button>
+      {error && <p className="form-error">{error}</p>}
+      <div className="grid grid-2">
+        <div className="card">
+          <div className="section-title">{t.commit_repos}</div>
+          <div className="row" style={{ marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder={t.add_repo_path}
+              value={newPath}
+              onChange={(e) => setNewPath(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!newPath.trim()) return;
+                try {
+                  await api.addCommitRepo(newPath.trim());
+                  setNewPath("");
+                  refresh();
+                } catch (err) {
+                  setError(errorMessage(err));
+                }
+              }}
+            >
+              <Plus size={14} /> {t.add}
+            </button>
+          </div>
+          {repos.length === 0 ? (
+            <p className="muted" style={{ fontSize: 13 }}>—</p>
+          ) : (
+            <table>
+              <tbody>
+                {repos.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <code>{r.path}</code>
+                    </td>
+                    <td style={{ width: 40 }}>
+                      <button
+                        className="icon-button"
+                        aria-label={t.delete}
+                        onClick={async () => {
+                          await api.deleteCommitRepo(r.id);
+                          refresh();
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
-        {repos.length === 0 ? (
-          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>—</p>
+
+        <div className="card">
+          <div className="section-title">{t.commit_authors}</div>
+          <div className="row">
+            <input type="text" value={authors} onChange={(e) => setAuthors(e.target.value)} style={{ flex: 1 }} />
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                try {
+                  const res = await api.setCommitAuthors(authors.split(",").map((a) => a.trim()).filter(Boolean));
+                  setAuthors(res.authors.join(", "));
+                  setAuthorsMsg(t.saved);
+                } catch (err) {
+                  setAuthorsMsg(errorMessage(err));
+                }
+              }}
+            >
+              {t.save}
+            </button>
+          </div>
+          <p className="muted" style={{ fontSize: 12, margin: "8px 0 0" }}>
+            {authorsMsg ? `${authorsMsg}. ` : ""}
+            {t.commit_authors_hint}
+          </p>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="section-title">{t.recent_commits}</div>
+        {commits.length === 0 ? (
+          <p className="muted" style={{ fontSize: 13 }}>—</p>
         ) : (
           <table>
             <tbody>
-              {repos.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <code>{r.path}</code>
+              {commits.map((c) => (
+                <tr key={c.id}>
+                  <td style={{ width: 130 }}>
+                    <span className="pill">{c.repo}</span>
                   </td>
-                  <td style={{ width: 40 }}>
-                    <button
-                      className="icon-button"
-                      onClick={async () => {
-                        await api.deleteCommitRepo(r.id);
-                        refresh();
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                  <td>{c.subject}</td>
+                  <td style={{ width: 100 }}>
+                    <code>{c.sha.slice(0, 7)}</code>
                   </td>
+                  <td className="muted" style={{ width: 150, textAlign: "right" }}>{when(c.ts)}</td>
                 </tr>
               ))}
             </tbody>
@@ -82,17 +149,15 @@ export function FilesCommitsView({ lang }: { lang: Lang }) {
         ) : (
           <table>
             <tbody>
-              {files.map((f, i) => (
-                <tr key={i}>
+              {files.map((f) => (
+                <tr key={f.id}>
                   <td style={{ width: 60 }}>
                     <span className="pill">{f.app_hint || "?"}</span>
                   </td>
                   <td>
                     <code>{f.path}</code>
                   </td>
-                  <td style={{ width: 140, color: "var(--text-muted)", textAlign: "right" }}>
-                    {new Date(f.ts * 1000).toLocaleString(lang)}
-                  </td>
+                  <td className="muted" style={{ width: 150, textAlign: "right" }}>{when(f.ts)}</td>
                 </tr>
               ))}
             </tbody>

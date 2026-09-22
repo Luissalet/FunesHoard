@@ -5,6 +5,7 @@
   --accent: #6b7593;
   --accent-soft: #aab4c8;
   --accent-strong: #4a5578;
+  --on-accent: #ffffff;
   --now: #c98a3e;
   --now-soft: #f0d9b8;
 
@@ -18,17 +19,21 @@
   --danger-soft: #f7ded6;
   --success: #3f7a53;
 
-  --cat-coding: #6b7593;
-  --cat-writing: #8a6bb0;
-  --cat-reading: #4f8fa6;
-  --cat-communication: #4f9b7a;
-  --cat-meetings: #c9863e;
-  --cat-browsing: #7a97b0;
-  --cat-design: #b06b9a;
-  --cat-media: #6bb0a3;
-  --cat-games: #b0946b;
+  /* Category palette: distinct hues at similar lightness so no category
+     reads as "empty track"; amber is reserved for the "now" marker. */
+  --cat-coding: #4c67a8;
+  --cat-writing: #8a63b8;
+  --cat-reading: #2f8ea3;
+  --cat-communication: #3f9a72;
+  --cat-meetings: #c0625e;
+  --cat-browsing: #7f9cc4;
+  --cat-design: #b35f98;
+  --cat-media: #57b3a0;
+  --cat-games: #a3864f;
   --cat-system: #8a8f9c;
-  --cat-other: #a8adb8;
+  --cat-other: #b3b8c4;
+  --mark-bg: #f3dcb6;
+  --mark-text: #5a3a0c;
 
   --radius: 10px;
   --shadow: 0 1px 2px rgba(20, 24, 32, 0.06), 0 4px 16px rgba(20, 24, 32, 0.04);
@@ -36,6 +41,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --mark-bg: #5a4526;
+    --mark-text: #f6e2c0;
     --bg: #14161c;
     --bg-elevated: #1c1f28;
     --bg-sidebar: #191c24;
@@ -44,12 +51,15 @@
     --border: #2b2f3b;
     --accent: #aab4c8;
     --accent-strong: #c7cede;
+    --on-accent: #14161c;
     --danger-soft: #3a2420;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.25);
   }
 }
 
 :root[data-theme="dark"] {
+  --mark-bg: #5a4526;
+  --mark-text: #f6e2c0;
   --bg: #14161c;
   --bg-elevated: #1c1f28;
   --bg-sidebar: #191c24;
@@ -58,6 +68,7 @@
   --border: #2b2f3b;
   --accent: #aab4c8;
   --accent-strong: #c7cede;
+  --on-accent: #14161c;
   --danger-soft: #3a2420;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.25);
 }

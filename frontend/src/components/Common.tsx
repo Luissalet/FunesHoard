@@ -1,6 +1,7 @@
 import { Inbox } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { categoryColor } from "../categoryColors";
+import { categoryLabel, type Lang } from "../i18n";
 
 export function StatCard({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -15,10 +16,12 @@ export function BarList({
   entries,
   formatValue,
   colorFor,
+  labelFor,
 }: {
   entries: [string, number][];
   formatValue: (v: number) => string;
   colorFor?: (key: string) => string;
+  labelFor?: (key: string) => string;
 }) {
   const max = Math.max(1, ...entries.map(([, v]) => v));
   if (entries.length === 0) return <p style={{ color: "var(--text-muted)", fontSize: 13 }}>—</p>;
@@ -27,7 +30,7 @@ export function BarList({
       {entries.map(([key, value]) => (
         <div className="bar-row" key={key}>
           <div className="label" title={key}>
-            {key}
+            {labelFor ? labelFor(key) : key}
           </div>
           <div className="bar-track">
             <div
@@ -45,8 +48,16 @@ export function BarList({
   );
 }
 
-export function CategoryBarList({ entries, formatValue }: { entries: [string, number][]; formatValue: (v: number) => string }) {
-  return <BarList entries={entries} formatValue={formatValue} colorFor={categoryColor} />;
+export function CategoryBarList({
+  entries,
+  formatValue,
+  lang,
+}: {
+  entries: [string, number][];
+  formatValue: (v: number) => string;
+  lang: Lang;
+}) {
+  return <BarList entries={entries} formatValue={formatValue} colorFor={categoryColor} labelFor={(c) => categoryLabel(c, lang)} />;
 }
 
 export function EmptyState({ title, body }: { title: string; body: string }) {

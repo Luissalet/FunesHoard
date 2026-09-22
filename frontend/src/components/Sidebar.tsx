@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { Lang } from "../i18n";
 import { STRINGS } from "../i18n";
-import type { StatusInfo } from "../api";
+import { formatClock, type StatusInfo } from "../api";
 
 export type ViewId = "today" | "week" | "search" | "projects" | "files" | "rules" | "privacy" | "assistant";
 
@@ -64,7 +64,9 @@ export function Sidebar({
         {status && (
           <span className={`pill ${status.paused ? "paused" : "recording"}`}>
             <span className="dot" />
-            {status.paused ? t.paused : t.recording}
+            {status.paused
+              ? `${t.paused}${status.paused_until ? ` ${t.until} ${formatClock(status.paused_until, lang)}` : ""}`
+              : t.recording}
           </span>
         )}
       </div>

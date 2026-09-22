@@ -1,6 +1,7 @@
 export interface StatusInfo {
   recording: boolean;
   paused: boolean;
+  paused_until: number | null;
   idle_s: number;
   now: number;
   app: string | null;
@@ -31,6 +32,8 @@ export interface SpanItem {
 export interface TimelineResponse {
   start: number;
   end: number;
+  human_range: string;
+  total: number;
   items: SpanItem[];
   truncated: boolean;
   has_more: boolean;
@@ -74,7 +77,27 @@ export interface ProjectItem {
   commits: number;
 }
 
+export interface CommitItem {
+  id: number;
+  ts: number;
+  repo: string;
+  sha: string;
+  subject: string;
+  author: string;
+}
+
+export interface Job {
+  id: string;
+  kind: string;
+  status: "queued" | "running" | "done" | "error";
+  progress: number;
+  total: number;
+  error: string | null;
+  result: Record<string, unknown> | null;
+}
+
 export interface FileEventItem {
+  id: number;
   path: string;
   ts: number;
   app_hint: string | null;
@@ -125,7 +148,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     let message = res.statusText;
     try {
       const data = await res.json();
-      message = data?.detail?.message || data?.message || message;
+      message = data?.message || data?.detail?.message || message;
     } catch {
       /* ignore */
     }
@@ -144,13 +167,16 @@ function qs(params: Record<string, string | number | undefined>): string {
 
 export const api = {
   status: () => req<StatusInfo>("GET", "/api/status"),
-  timeline: (params: { start?: string; end?: string; min_minutes?: number; limit?: number }) =>
+  timeline: (params: { day?: string; start?: string; end?: string; min_minutes?: number; limit?: number; offset?: number }) =>
     req<TimelineResponse>("GET", `/api/timeline${qs(params)}`),
   summary: (params: { day?: string; start?: string; end?: string }) =>
     req<SummaryResponse>("GET", `/api/summary${qs(params)}`),
   week: (start?: string) => req<{ days: (SummaryResponse & { date: string })[] }>("GET", `/api/week${qs({ start })}`),
   search: (query: string, params: { since?: string; until?: string; limit?: number }) =>
     req<{ query: string; items: SearchItem[]; truncated: boolean }>("GET", `/api/search${qs({ query, ...params })}`),
+  commits: (params: { since?: string; limit?: number }) =>
+    req<{ items: CommitItem[]; truncated: boolean }>("GET", `/api/commits${qs(params)}`),
+  job: (id: string) => req<Job>("GET", `/api/jobs/${id}`),
   recentFiles: (params: { since?: string; limit?: number }) =>
     req<{ items: FileEventItem[]; truncated: boolean }>("GET", `/api/recent-files${qs(params)}`),
   projects: (params: { since?: string; limit?: number }) =>
@@ -184,6 +210,8 @@ export const api = {
   commitRepos: () => req<{ items: CommitRepo[] }>("GET", "/api/commit-repos"),
   addCommitRepo: (path: string) => req("POST", "/api/commit-repos", { path, enabled: true }),
   deleteCommitRepo: (id: number) => req("DELETE", `/api/commit-repos/${id}`),
+  commitAuthors: () => req<{ authors: string[] }>("GET", "/api/commit-authors"),
+  setCommitAuthors: (authors: string[]) => req<{ authors: string[] }>("PUT", "/api/commit-authors", { authors }),
 };
 
 export function formatDuration(seconds: number): string {
@@ -194,6 +222,43 @@ export function formatDuration(seconds: number): string {
   return `${m}m`;
 }
 
-export function formatClock(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/**
+ * Locale for dates and times: the browser's own when it matches the
+ * interface language (so an en-GB or es-MX user keeps their clock format),
+ * otherwise the European variant of that language.
+ */
+export function localeFor(lang: string): string {
+  try {
+    const nav = navigator.language || "";
+    if (nav.toLowerCase().startsWith(lang)) return nav;
+  } catch {
+    /* ignore */
+  }
+  return lang === "es" ? "es-ES" : "en-GB";
+}
+
+export function formatClock(ts: number, lang?: string): string {
+  return new Date(ts * 1000).toLocaleTimeString(lang ? localeFor(lang) : [], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** "Tuesday, 22 September" in the interface language (first letter capitalised). */
+export function formatLongDate(ts: number, lang: string): string {
+  const text = new Date(ts * 1000).toLocaleDateString(localeFor(lang), { weekday: "long", day: "numeric", month: "long" });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** YYYY-MM-DD for a local calendar day (what the API and <input type=date> use). */
+export function isoDay(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Parse YYYY-MM-DD as a *local* date (new Date("2026-09-21") is UTC midnight). */
+export function parseIsoDay(day: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

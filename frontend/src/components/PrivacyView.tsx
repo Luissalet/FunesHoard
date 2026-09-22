@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, Plus, Trash2 } from "lucide-react";
-import { api, type PrivacyRule, type StatusInfo } from "../api";
-import { STRINGS, type Lang } from "../i18n";
+import { api, errorMessage, formatClock, type PrivacyRule, type StatusInfo } from "../api";
+import { fmt, STRINGS, type Lang } from "../i18n";
 import { InlineConfirm } from "./Common";
 
 export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; status: StatusInfo | null; onStatusChange: () => void }) {
@@ -14,6 +14,8 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [retentionMsg, setRetentionMsg] = useState<string | null>(null);
 
   function refresh() {
     api.privacyRules().then((r) => setRules(r.items));
@@ -26,9 +28,14 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
 
   async function addRule() {
     if (!draftPattern.trim()) return;
-    await api.addPrivacyRule({ kind: draftKind, match_type: draftMatch, pattern: draftPattern.trim(), enabled: true });
-    setDraftPattern("");
-    refresh();
+    setRuleError(null);
+    try {
+      await api.addPrivacyRule({ kind: draftKind, match_type: draftMatch, pattern: draftPattern.trim(), enabled: true });
+      setDraftPattern("");
+      refresh();
+    } catch (err) {
+      setRuleError(errorMessage(err));
+    }
   }
 
   return (
@@ -36,10 +43,20 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
       <div className="card">
         <div className="section-title">{t.privacy_status}</div>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <span className={`pill ${status?.paused ? "paused" : "recording"}`} style={{ fontSize: 14 }}>
-            <span className="dot" />
-            {status?.paused ? t.paused : t.recording}
-          </span>
+          <div>
+            <span className={`pill ${status?.paused ? "paused" : "recording"}`} style={{ fontSize: 14 }}>
+              <span className="dot" />
+              {status?.paused
+                ? `${t.paused} ${status.paused_until ? `${t.until} ${formatClock(status.paused_until, lang)}` : t.until_resumed}`
+                : t.recording}
+            </span>
+            {status?.paused && status.paused_until && (
+              <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>{t.resumes_by_itself}</p>
+            )}
+            {status?.probe_status && !status.paused && (
+              <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>{status.probe_status}</p>
+            )}
+          </div>
           {status?.paused ? (
             <button
               className="btn btn-primary"
@@ -124,6 +141,7 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
             <Plus size={14} /> {t.add}
           </button>
         </div>
+        {ruleError && <p className="form-error">{ruleError}</p>}
       </div>
 
       <div className="grid grid-2" style={{ marginTop: 16 }}>
@@ -141,12 +159,18 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
             <button
               className="btn btn-primary"
               onClick={async () => {
-                await api.setRetention(retentionDays);
+                try {
+                  const r = await api.setRetention(retentionDays);
+                  setRetentionMsg(`${t.saved}: ${r.days} ${t.retention_days}`);
+                } catch (err) {
+                  setRetentionMsg(errorMessage(err));
+                }
               }}
             >
               {t.save}
             </button>
           </div>
+          {retentionMsg && <p className="muted" style={{ fontSize: 12, margin: "8px 0 0" }}>{retentionMsg}</p>}
         </div>
 
         <div className="card">
@@ -177,8 +201,18 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
             onConfirm={async () => {
               const start = new Date(rangeStart).getTime() / 1000;
               const end = new Date(rangeEnd).getTime() / 1000;
-              const res = await api.deleteRange(start, end);
-              setDeleteMsg(`${t.delete}: ${JSON.stringify(res.deleted)}`);
+              try {
+                const res = await api.deleteRange(start, end);
+                setDeleteMsg(
+                  fmt(t.deleted_summary, {
+                    spans: res.deleted.spans ?? 0,
+                    files: res.deleted.file_events ?? 0,
+                    commits: res.deleted.commits ?? 0,
+                  }),
+                );
+              } catch (err) {
+                setDeleteMsg(errorMessage(err));
+              }
             }}
           />
         </div>

@@ -9,10 +9,11 @@ export function AssistantActivityView({ lang }: { lang: Lang }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.agentCalls(100).then((r) => {
-      setCalls(r.items);
-      setLoading(false);
-    });
+    api
+      .agentCalls(100)
+      .then((r) => setCalls(r.items))
+      .catch(() => setCalls([]))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return null;
@@ -24,7 +25,7 @@ export function AssistantActivityView({ lang }: { lang: Lang }) {
       </div>
       <div className="card">
         {calls.length === 0 ? (
-          <EmptyState title={t.no_agent_calls} body="" />
+          <EmptyState title={t.no_agent_calls} body={t.no_agent_calls_body} />
         ) : (
           <table>
             <thead>
@@ -39,12 +40,17 @@ export function AssistantActivityView({ lang }: { lang: Lang }) {
             <tbody>
               {calls.map((c) => (
                 <tr key={c.id}>
-                  <td style={{ width: 70, color: "var(--text-muted)" }}>{formatClock(c.ts)}</td>
+                  <td style={{ width: 70, color: "var(--text-muted)" }}>{formatClock(c.ts, lang)}</td>
                   <td>
                     <code>{c.tool}</code>
                   </td>
-                  <td style={{ color: "var(--text-muted)" }}>{c.args_summary}</td>
-                  <td style={{ width: 70 }}>{Math.round(c.duration_ms)}ms</td>
+                  <td style={{ color: "var(--text-muted)" }}>
+                    {c.args_summary}
+                    {!c.ok && c.error && <div className="call-error">{c.error}</div>}
+                  </td>
+                  <td style={{ width: 80, fontVariantNumeric: "tabular-nums" }}>
+                    {c.duration_ms < 10 ? c.duration_ms.toFixed(1) : Math.round(c.duration_ms)} ms
+                  </td>
                   <td style={{ width: 70 }}>
                     {c.ok ? (
                       <span className="badge" style={{ background: "var(--success)" }}>

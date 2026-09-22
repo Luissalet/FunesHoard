@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { api, type ClassifyRule } from "../api";
-import { STRINGS, type Lang } from "../i18n";
+import { api, errorMessage, type ClassifyRule } from "../api";
+import { categoryLabel, fmt, STRINGS, type Lang } from "../i18n";
 
 const emptyDraft = { match_type: "app", pattern: "", category: "Coding", project: "" };
 
@@ -12,6 +12,8 @@ export function RulesView({ lang }: { lang: Lang }) {
   const [draft, setDraft] = useState(emptyDraft);
   const [preview, setPreview] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [jobMsg, setJobMsg] = useState<string | null>(null);
 
   function refresh() {
     api.classifyRules().then((r) => {
@@ -23,16 +25,26 @@ export function RulesView({ lang }: { lang: Lang }) {
 
   async function runPreview() {
     if (!draft.pattern.trim()) return;
-    const res = await api.previewClassifyRule({ ...draft, project: draft.project || null });
-    setPreview(res.would_change);
+    setError(null);
+    try {
+      const res = await api.previewClassifyRule({ ...draft, project: draft.project || null });
+      setPreview(res.would_change);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   async function addRule() {
     if (!draft.pattern.trim()) return;
-    await api.addClassifyRule({ ...draft, project: draft.project || null });
-    setDraft(emptyDraft);
-    setPreview(null);
-    refresh();
+    setError(null);
+    try {
+      await api.addClassifyRule({ ...draft, project: draft.project || null });
+      setDraft(emptyDraft);
+      setPreview(null);
+      refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   async function move(index: number, dir: -1 | 1) {
@@ -63,7 +75,7 @@ export function RulesView({ lang }: { lang: Lang }) {
           <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
             {categories.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {categoryLabel(c, lang)}
               </option>
             ))}
           </select>
@@ -81,6 +93,7 @@ export function RulesView({ lang }: { lang: Lang }) {
             <Plus size={14} /> {t.add_rule}
           </button>
         </div>
+        {error && <p className="form-error">{error}</p>}
         {preview !== null && (
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>
             {t.would_change}: <strong style={{ color: "var(--text)" }}>{preview}</strong> {t.spans}
@@ -98,13 +111,32 @@ export function RulesView({ lang }: { lang: Lang }) {
             disabled={busy}
             onClick={async () => {
               setBusy(true);
-              await api.reapplyClassifyRules();
-              setBusy(false);
+              setJobMsg(t.working);
+              try {
+                const { job_id } = await api.reapplyClassifyRules();
+                for (;;) {
+                  await new Promise((r) => setTimeout(r, 400));
+                  const job = await api.job(job_id);
+                  if (job.status === "done") {
+                    setJobMsg(fmt(t.reclassified, { n: job.total }));
+                    break;
+                  }
+                  if (job.status === "error") {
+                    setJobMsg(job.error || t.error);
+                    break;
+                  }
+                }
+              } catch (err) {
+                setJobMsg(errorMessage(err));
+              } finally {
+                setBusy(false);
+              }
             }}
           >
             {t.reapply}
           </button>
         </div>
+        {jobMsg && <p className="muted" style={{ fontSize: 12, margin: "8px 0 0" }}>{jobMsg}</p>}
         <table style={{ marginTop: 10 }}>
           <thead>
             <tr>
@@ -119,7 +151,7 @@ export function RulesView({ lang }: { lang: Lang }) {
           <tbody>
             {rules.map((r, i) => (
               <tr key={r.id}>
-                <td style={{ width: 50 }}>
+                <td className="rule-move">
                   <button className="icon-button" onClick={() => move(i, -1)}>
                     <ArrowUp size={12} />
                   </button>
@@ -131,7 +163,7 @@ export function RulesView({ lang }: { lang: Lang }) {
                 <td>
                   <code>{r.pattern}</code>
                 </td>
-                <td>{r.category}</td>
+                <td>{categoryLabel(r.category, lang)}</td>
                 <td>{r.project || "—"}</td>
                 <td style={{ width: 40 }}>
                   <button
