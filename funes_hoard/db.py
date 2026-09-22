@@ -197,7 +197,34 @@ class Database:
                         "INSERT INTO privacy_rules(kind, match_type, pattern, enabled) VALUES (?, ?, ?, 1)",
                         (r.kind, r.match_type, r.pattern),
                     )
+            self._migrate_privacy_defaults(conn)
             conn.commit()
+
+    def _migrate_privacy_defaults(self, conn: sqlite3.Connection) -> None:
+        """Bring a pre-existing database's default privacy rules up to date
+        (e.g. the case/accent-insensitive incognito fix) without touching
+        anything the user changed. A fresh database is already current, so
+        this is a fast no-op there; see `core.privacy.migrate_default_rules`."""
+        from funes_hoard.core.privacy import PRIVACY_DEFAULTS_VERSION, migrate_default_rules
+
+        key = "privacy_defaults_version"
+        current = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        current_version = int(current["value"]) if current and current["value"] else 1
+        if current_version >= PRIVACY_DEFAULTS_VERSION:
+            return
+        existing = [dict(r) for r in conn.execute("SELECT id, kind, match_type, pattern FROM privacy_rules").fetchall()]
+        plan = migrate_default_rules(existing)
+        for rule_id, new_pattern in plan["renames"]:
+            conn.execute("UPDATE privacy_rules SET pattern = ? WHERE id = ?", (new_pattern, rule_id))
+        for rule in plan["adds"]:
+            conn.execute(
+                "INSERT INTO privacy_rules(kind, match_type, pattern, enabled) VALUES (?, ?, ?, 1)",
+                (rule.kind, rule.match_type, rule.pattern),
+            )
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(PRIVACY_DEFAULTS_VERSION)),
+        )
 
     def execute(self, sql: str, params: Iterable[Any] = ()) -> int:
         with self._lock, self.connect() as conn:
