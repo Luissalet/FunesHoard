@@ -136,6 +136,7 @@ export interface CommitRepo {
   path: string;
   enabled: number;
   last_scan_ts: number | null;
+  last_repo_count: number | null;
 }
 
 export interface Resolution {

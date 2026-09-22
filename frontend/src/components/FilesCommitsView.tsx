@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { api, localeFor, errorMessage, type CommitItem, type CommitRepo, type FileEventItem } from "../api";
-import { STRINGS, type Lang } from "../i18n";
+import { STRINGS, fmt, type Lang } from "../i18n";
 import { EmptyState } from "./Common";
 
 export function FilesCommitsView({ lang }: { lang: Lang }) {
@@ -54,7 +54,11 @@ export function FilesCommitsView({ lang }: { lang: Lang }) {
                 try {
                   await api.addCommitRepo(newPath.trim());
                   setNewPath("");
+                  setError(null);
                   refresh();
+                  // The scan runs in the background; one follow-up refresh
+                  // is enough to pick up "N repos found" for a typical folder.
+                  setTimeout(refresh, 1500);
                 } catch (err) {
                   setError(errorMessage(err));
                 }
@@ -72,6 +76,11 @@ export function FilesCommitsView({ lang }: { lang: Lang }) {
                   <tr key={r.id}>
                     <td>
                       <code>{r.path}</code>
+                      <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                        {r.last_scan_ts == null
+                          ? t.repo_scan_pending
+                          : fmt(t.repo_scan_summary, { n: r.last_repo_count ?? 0, when: when(r.last_scan_ts) })}
+                      </div>
                     </td>
                     <td style={{ width: 40 }}>
                       <button

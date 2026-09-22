@@ -214,3 +214,21 @@ def test_demo_flag_seeds_an_empty_data_dir(tmp_path):
     app = create_app(tmp_path / "fresh", None, demo=True, port=18831)
     with TestClient(app, base_url="http://127.0.0.1:18831") as c:
         assert c.get("/api/health").json()["spans"] > 20
+
+
+# --- A2: adding a commit-repo folder gives real feedback -------------------
+def test_commit_repo_rejects_a_path_that_does_not_exist(client):
+    r = client.post("/api/commit-repos", json={"path": "/no/such/folder/anywhere"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "bad_path"
+
+
+def test_commit_repo_accepts_a_real_folder_and_scans_it_right_away(client, tmp_path):
+    r = client.post("/api/commit-repos", json={"path": str(tmp_path)})
+    assert r.status_code == 200
+    assert r.json()["id"]
+    items = client.get("/api/commit-repos").json()["items"]
+    assert any(i["path"] == str(tmp_path) for i in items)
+    # A background scan was kicked off rather than waiting for the next poll.
+    jobs = client.get("/api/jobs").json()["items"]
+    assert any(j["kind"] == "git_scan" for j in jobs)

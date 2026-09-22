@@ -803,9 +803,16 @@ def create_app(
 
     @app.post("/api/commit-repos")
     def commit_repos_add(body: CommitRepoIn):
+        # A2: a path that does not exist used to be accepted silently and
+        # listed like a real one, with nothing to scan until the next poll.
+        if not Path(body.path).is_dir():
+            raise BadInput("bad_path", f"{body.path!r} is not a folder on this machine.")
         rid = db.execute(
             "INSERT OR IGNORE INTO commit_repos(path, enabled) VALUES (?, ?)", (body.path, int(body.enabled))
         )
+        # Scan right away instead of waiting for the next 10-minute poll, so
+        # "N repos found, last scanned just now" shows up immediately.
+        jobs.submit("git_scan", lambda cb: {"commits_found": git_poller.poll_once()})
         return {"id": rid}
 
     @app.get("/api/commit-authors")
