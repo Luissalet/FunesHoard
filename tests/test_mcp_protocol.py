@@ -27,9 +27,9 @@ def _free_port() -> int:
 
 
 @pytest.fixture()
-def live_app(tmp_path):
+def live_app(demo_data_dir):
     port = _free_port()
-    app = create_app(tmp_path / "data", None, demo=True, port=port)
+    app = create_app(demo_data_dir, None, demo=True, port=port)
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)

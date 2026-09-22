@@ -10,14 +10,14 @@ PORT = 18832
 
 
 @pytest.fixture()
-def static_client(tmp_path):
+def static_client(tmp_path, demo_data_dir):
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("<html>index</html>", encoding="utf-8")
     (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
     secret = tmp_path / "secret.txt"
     secret.write_text("TOP-SECRET", encoding="utf-8")
-    app = create_app(tmp_path / "data", dist, demo=True, port=PORT)
+    app = create_app(demo_data_dir, dist, demo=True, port=PORT)
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
         yield c, secret
 
@@ -51,8 +51,8 @@ def test_unknown_api_path_is_json_404_not_the_spa(static_client):
 
 
 @pytest.fixture()
-def client(tmp_path):
-    app = create_app(tmp_path / "data", None, demo=True, port=PORT)
+def client(demo_data_dir):
+    app = create_app(demo_data_dir, None, demo=True, port=PORT)
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
         yield c
 

@@ -5,8 +5,8 @@ from funes_hoard.api import create_app
 
 
 @pytest.fixture()
-def client(tmp_path):
-    app = create_app(tmp_path / "data", None, demo=True, port=18831)
+def client(demo_data_dir):
+    app = create_app(demo_data_dir, None, demo=True, port=18831)
     with TestClient(app, base_url="http://127.0.0.1:18831") as c:
         yield c
 
@@ -208,3 +208,9 @@ def test_ui_search_uses_markers_that_cannot_collide_with_title_brackets(client):
 def test_ui_recent_commits(client):
     items = client.get("/api/commits", params={"since": "-7d"}).json()["items"]
     assert items and {"repo", "sha", "subject"} <= set(items[0])
+
+
+def test_demo_flag_seeds_an_empty_data_dir(tmp_path):
+    app = create_app(tmp_path / "fresh", None, demo=True, port=18831)
+    with TestClient(app, base_url="http://127.0.0.1:18831") as c:
+        assert c.get("/api/health").json()["spans"] > 20
