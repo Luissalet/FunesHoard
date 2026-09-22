@@ -12,3 +12,4 @@ frontend/dist/
 test-results/
 .mypy_cache/
 docs/media/*.tmp.png
+data-uxtest/
