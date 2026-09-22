@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Brain, RefreshCw } from "lucide-react";
-import { api, errorMessage, type BackendStatus } from "../api";
+import { api, errorMessage, type BackendConfigPatch, type BackendStatus } from "../api";
 import { STRINGS, type Lang } from "../i18n";
 import { Badge } from "./Common";
 
@@ -53,15 +53,27 @@ export function SettingsView({ lang }: { lang: Lang }) {
     setSaveError(null);
     setSaveMsg(null);
     try {
-      const patch: Parameters<typeof api.saveBackendConfig>[0] = {};
-      if (faustusUrl.trim()) patch.faustus_url = faustusUrl.trim();
+      // A blank field is sent as "" so emptying it removes a saved override;
+      // the token is the exception -- blank means "keep the stored one".
+      const patch: BackendConfigPatch = {
+        faustus_url: faustusUrl.trim(),
+        capabilities: { llm: { url: llmUrl.trim(), model: llmModel.trim() } },
+      };
       if (faustusToken.trim()) patch.faustus_token = faustusToken.trim();
-      if (llmUrl.trim() || llmModel.trim()) {
-        patch.capabilities = { llm: { url: llmUrl.trim() || undefined, model: llmModel.trim() || undefined } };
-      }
       const res = await api.saveBackendConfig(patch);
       setFaustusToken("");
       setSaveMsg(res.faustus_token_set ? t.settings_saved_with_token : t.settings_saved);
+      refresh();
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    }
+  }
+
+  async function clearToken() {
+    setSaveError(null);
+    try {
+      await api.saveBackendConfig({ faustus_token: "" });
+      setSaveMsg(t.settings_saved);
       refresh();
     } catch (err) {
       setSaveError(errorMessage(err));
@@ -107,6 +119,7 @@ export function SettingsView({ lang }: { lang: Lang }) {
               </tr>
               <tr>
                 <td colSpan={5} className="muted" style={{ fontSize: 12, paddingTop: 4 }}>
+                  {llm.state !== "resolved" && <div style={{ fontSize: 13, marginBottom: 2 }}>{t.no_llm}</div>}
                   {llm.reason}
                 </td>
               </tr>
@@ -118,7 +131,7 @@ export function SettingsView({ lang }: { lang: Lang }) {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="section-title">{t.model_overrides}</div>
         <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>{t.model_overrides_hint}</p>
-        <div className="grid grid-2">
+        <div className="grid grid-2 form-grid">
           <label>
             {t.faustus_url}
             <input type="text" placeholder="http://127.0.0.1:7000" value={faustusUrl} onChange={(e) => setFaustusUrl(e.target.value)} />
@@ -145,6 +158,11 @@ export function SettingsView({ lang }: { lang: Lang }) {
           <button className="btn btn-primary" onClick={saveConfig}>
             {t.save}
           </button>
+          {status?.faustus_token_set && (
+            <button className="btn btn-ghost" onClick={clearToken}>
+              {t.clear_token}
+            </button>
+          )}
         </div>
         {saveMsg && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{saveMsg}</p>}
         {saveError && <p className="form-error">{saveError}</p>}

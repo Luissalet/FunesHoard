@@ -129,6 +129,9 @@ export const STRINGS = {
     write_my_day_button: "Write my day",
     regenerate: "Regenerate",
     written_with: "Written with",
+    no_llm: "No language model is loaded. Faustus can serve one, or load one in Ollama.",
+    no_activity_to_write: "Nothing was recorded on this day, so there is nothing to write about.",
+    clear_token: "Remove token",
   },
   es: {
     appName: "Funes's Hoard",
@@ -258,6 +261,9 @@ export const STRINGS = {
     write_my_day_button: "Escribe mi día",
     regenerate: "Regenerar",
     written_with: "Escrito con",
+    no_llm: "No hay ningún modelo de lenguaje cargado. Faustus puede servir uno, o puedes cargarlo en Ollama.",
+    no_activity_to_write: "No hay nada registrado este día, así que no hay nada que contar.",
+    clear_token: "Quitar token",
   },
 } as const;
 

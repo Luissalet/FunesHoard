@@ -457,6 +457,7 @@ tr:last-child td {
 }
 
 input[type="text"],
+input[type="password"],
 input[type="number"],
 input[type="datetime-local"],
 select {
@@ -645,4 +646,11 @@ select {
   to {
     transform: rotate(360deg);
   }
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
 }

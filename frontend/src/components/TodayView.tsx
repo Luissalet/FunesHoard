@@ -173,7 +173,7 @@ export function TodayView({ lang }: { lang: Lang }) {
         </div>
       </div>
 
-      <WriteMyDayCard day={day} lang={lang} />
+      <WriteMyDayCard day={day} lang={lang} hasActivity={summary.active_s > 0} />
 
       <div className="grid grid-4" style={{ marginTop: 16 }}>
         <div className="card">
@@ -235,7 +235,7 @@ export function TodayView({ lang }: { lang: Lang }) {
   );
 }
 
-function WriteMyDayCard({ day, lang }: { day: string; lang: Lang }) {
+function WriteMyDayCard({ day, lang, hasActivity }: { day: string; lang: Lang; hasActivity: boolean }) {
   const t = STRINGS[lang];
   const [narrative, setNarrative] = useState<DayNarrative | null>(null);
   const [busy, setBusy] = useState(false);
@@ -267,6 +267,8 @@ function WriteMyDayCard({ day, lang }: { day: string; lang: Lang }) {
   }
 
   if (!narrative || !narrative.enabled) return null;
+  // Why the button is off, in the words shown under it and as its tooltip.
+  const blocker = !narrative.available ? t.no_llm : !hasActivity ? t.no_activity_to_write : null;
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
@@ -277,8 +279,8 @@ function WriteMyDayCard({ day, lang }: { day: string; lang: Lang }) {
         </div>
         <button
           className="btn"
-          disabled={busy || !narrative.available}
-          title={!narrative.available ? narrative.reason || undefined : undefined}
+          disabled={busy || blocker !== null}
+          title={blocker ?? undefined}
           onClick={() => write(Boolean(narrative.text))}
         >
           {busy ? t.working : narrative.text ? t.regenerate : t.write_my_day_button}
@@ -292,9 +294,12 @@ function WriteMyDayCard({ day, lang }: { day: string; lang: Lang }) {
           </p>
         </>
       ) : (
-        <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
-          {narrative.available ? t.write_my_day_hint : narrative.reason}
-        </p>
+        <>
+          <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>{blocker ?? t.write_my_day_hint}</p>
+          {!narrative.available && narrative.reason && (
+            <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>{narrative.reason}</p>
+          )}
+        </>
       )}
       {error && <p className="form-error">{error}</p>}
     </div>
