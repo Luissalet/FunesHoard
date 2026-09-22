@@ -154,8 +154,8 @@ def test_search_survives_fts_syntax_characters(client):
 
 
 def test_search_hyphenated_query_finds_the_title(client):
-    body = client.post("/api/agent/activity_search", json={"query": "Funes the"}).json()
-    assert any("Funes" in i["text"] for i in body["items"])
+    body = client.post("/api/agent/activity_search", json={"query": "Episodic memory"}).json()
+    assert any("Episodic" in i["text"] for i in body["items"])
 
 
 def test_search_with_empty_query_is_a_clear_400(client):
