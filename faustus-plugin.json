@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "funes",
+  "name": "Funes's Hoard",
+  "purpose": "Gives the assistant a read-only, privacy-filtered memory of what the user was doing on this computer: app, window, files, commits, over time.",
+  "capabilities": ["activity timeline", "day summaries", "focus blocks", "resume context", "recent files", "git commits", "search history"],
+  "placeholders": ["FUNES_DIR", "APP_URL"],
+  "defaults": {"APP_URL": "http://127.0.0.1:8813"},
+  "app": {
+    "url_default": "http://127.0.0.1:8813",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "funes-hoard"}},
+    "identify": {"service": ["funes-hoard"], "title": ["funes's hoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{FUNES_DIR}/.venv/Scripts/python.exe",
+      "argv": ["-m", "funes_hoard", "--no-browser"],
+      "cwd": "{FUNES_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 30}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{FUNES_DIR}/.venv/Scripts/python.exe",
+    "args": ["{FUNES_DIR}/funes_hoard/mcp_server.py"],
+    "env": {"FUNES_URL": "{APP_URL}"},
+    "optional_env": []
+  },
+  "provides": {"skills": ["skills/where-was-i/SKILL.md"]},
+  "notes": "Local episodic memory: foreground app/window, idle/away, files opened and commits made, with privacy rules applied before storage. Read-only for the assistant except pausing recording."
+}

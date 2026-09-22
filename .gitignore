@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+data-demo/
+node_modules/
+frontend/dist/
+*.log
+.env
+test-results/
+.mypy_cache/
+docs/media/*.tmp.png
