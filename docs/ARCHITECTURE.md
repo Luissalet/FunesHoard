@@ -51,6 +51,15 @@ The **open span is flushed to sqlite every 30 seconds** (`FLUSH_INTERVAL_S`
 in `collector.py`) so a crash loses at most the last 30s of the current
 span, not the whole session -- proven by `tests/test_collector.py`.
 
+**Away** starts when `idle_s` reaches the threshold (`away_after_s`, 2 min)
+and is back-dated to the last input, never before the end of what is
+already recorded (the builder's floor, raised at startup and after a pause).
+While the foreground window classifies as **Meetings or Media** (a call, a
+film, also one in a browser tab via the streaming title rule) the collector
+passes a longer threshold (`away_after_meetings_s`, 60 min) and
+`passive=True`: then the away span starts only when that threshold is
+crossed, so a 45-minute call with no typing stays a meeting.
+
 A **sleep/hibernate gap** (no samples for >90s, `SpanBuilder.sleep_gap_s`)
 closes the open span at the *last* sample's timestamp instead of bridging
 the gap, so a laptop that slept for two hours does not get credited two

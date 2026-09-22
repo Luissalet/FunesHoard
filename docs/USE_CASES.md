@@ -26,9 +26,11 @@ productions in the evening.
   locked screen.
 - **Steps (UI):**
   1. Open `http://127.0.0.1:8813`. The Today view is empty-ish (the day just
-     started).
-  2. Switch the day to Friday (or "Yesterday" on a Tuesday) and read the
-     timeline end: last project, last window title, files and commits.
+     started), but its **Where was I?** card lists the last three work
+     contexts before now -- Friday's -- with project, last titles, files and
+     commits.
+  2. Click **Show in timeline** on the first one: Friday opens with that
+     moment pinned (or switch the day by hand and read the timeline end).
   3. Open **Files & commits** to see the last files opened and the last
      commit subject.
 - **Done when:** in under a minute the user can say "I was in
@@ -64,7 +66,8 @@ productions in the evening.
 - **Expected tool calls:** `activity_summary(day="esta semana",
   group_by="all")`, `activity_projects(since="esta semana")`, optionally
   `activity_search("LinkedIn InfoJobs", since="esta semana")` to size the job
-  search; then Faustus's own note-writing tool with the text it composed.
+  search (its `windows_open_human` is how long those windows were open);
+  then Faustus's own note-writing tool with the text it composed.
 - **Done when:** the numbers in the note are the `*_human` strings the tools
   returned, projects are real ones (not random repo names or words from
   window titles), and the job search and the novel are identifiable.
@@ -78,8 +81,7 @@ productions in the evening.
   date to last week -> click the hit -> land on that day's timeline at that
   moment.
 - **Agent variant:** "Faustus, ¿cuándo estuve mirando lo de FTS5?" ->
-  `activity_search("fts5")` -> `activity_timeline(start=<hit ts minus a bit>,
-  end=<hit ts plus a bit>)`.
+  `activity_search("fts5")` -> `activity_timeline(around=<the hit's ts>)`.
 - **Done when:** the right hit is first, its day and hour are readable, and
   there is a way to see the surrounding activity without retyping dates.
 
@@ -94,7 +96,8 @@ productions in the evening.
      when.
   2. After the pause, open a private window (Chrome in Spanish: "Nueva
      pestaña de incógnito") and a bank page ("Banco ... - Área de clientes").
-  3. **Privacy** -> Delete range for the half hour he forgot.
+  3. **Privacy** -> Delete a time range -> **Last 30 min** (or the exact
+     start and end) -> Delete -> confirm, for the half hour he forgot.
 - **Agent variant:** "Faustus, no me grabes la próxima media hora" ->
   `activity_pause(minutes=30)` -> "¿me estás grabando?" -> `activity_now()`.
 - **Done when:** search for the interview company or the bank finds nothing
@@ -137,8 +140,9 @@ productions in the evening.
   portfolio write-up.
 - **Goal:** get the raw data out of Funes's Hoard and into the data-analysis
   app.
-- **Steps:** **Privacy** -> Export JSON -> open the file in Laplace's Hoard ->
-  group `spans` by day and project.
+- **Steps:** **Privacy** -> Export -> (optionally a From/To day range) ->
+  **Spans as CSV** -> open the file in Laplace's Hoard -> group by `date` and
+  `project`, sum `duration_min`.
 - **Done when:** the export is a well-formed file with local-readable times
   and the project/category fields the analysis needs, and it never contains
   titles that were redacted.

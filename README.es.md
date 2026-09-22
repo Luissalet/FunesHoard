@@ -6,7 +6,7 @@
 
 [English](README.md) · [Ejecutar en local](#ejecutar-en-local-en-windows) · [Conectar una IA](docs/MCP.md) · [Portfolio](https://luissalet.github.io/Portfolio/#projects)
 
-![Vista del día: la línea de tiempo de ayer ajustada a las horas activas, un tramo fijado y totales por categoría, aplicación y proyecto](docs/media/today.png)
+![Vista del día: la línea de tiempo de ayer ajustada a las horas activas con la ausencia rayada, un tramo fijado y la tarjeta ¿Dónde lo dejé? con los últimos contextos de trabajo](docs/media/today.png)
 *Aplicación real, tres días de datos de demostración sintéticos (`--demo`, sin títulos de ventana reales).*
 
 ## Por qué
@@ -21,19 +21,50 @@ archivos que abriste y los commits que hiciste. Lo convierte en tramos,
 resúmenes del día, bloques de concentración y respuestas para retomar el
 contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 
+## Casos de uso
+
+Ocho escenarios concretos, recorridos de principio a fin como persona en el
+navegador y como modelo local por MCP ([docs/USE_CASES.md](docs/USE_CASES.md);
+hallazgos y arreglos en [docs/USABILITY_REPORT.md](docs/USABILITY_REPORT.md)):
+
+- **Lunes por la mañana, "¿dónde lo dejé?"**: la pantalla Hoy abre con los
+  tres últimos contextos de trabajo (proyecto, últimos títulos, archivos,
+  commits), así que el último archivo del viernes se ve antes de elegir un
+  día; un clic fija ese momento en la línea de tiempo de su día.
+- **"Faustus, ¿dónde lo dejé ayer?"**: una sola llamada a
+  `activity_where_was_i`, unos 500 tokens, responde con el proyecto, la
+  ventana y el título del editor que nombra el archivo, sin contar la música
+  ni el chat.
+- **Una nota semanal para la búsqueda de empleo**: `activity_summary` da
+  las horas por proyecto como textos listos para leer, y una búsqueda de
+  los portales de empleo o del título de la novela dice cuánto tiempo
+  estuvieron abiertas esas ventanas; Faustus escribe la nota con su propia
+  herramienta de notas.
+- **"Esa página de FTS5 del martes"**: buscas, haces clic en el resultado y
+  llegas a ese día con el tramo fijado (la dirección lo conserva, así que
+  recargar y Atrás funcionan); un agente pasa el `ts` del resultado a
+  `activity_timeline(around=...)`.
+- **Privacidad antes de una entrevista o del banco**: pausa de una hora,
+  las ventanas privadas (también "incógnito" en español) y las páginas del
+  banco nunca se pueden buscar, y "Últimos 30 min" rellena el borrado de un
+  rango para la media hora que se te olvidó.
+- **Horas por proyecto para un gráfico**: exporta los tramos a CSV (fechas y
+  horas locales, minutos, categoría, proyecto) para una hoja de cálculo o la
+  app de análisis de datos.
+
 ## Qué está implementado
 
 | Área | Disponible ahora | Límite |
 | --- | --- | --- |
-| Captura | Aplicación en primer plano, título de ventana, inactividad y bloqueo, muestreados cada segundo en Windows (`ctypes` + `psutil`); agrupados en tramos activo/ausente/bloqueado; la ausencia empieza cuando dejaste de usar teclado y ratón, no cuando se detecta; las suspensiones y los momentos excluidos o en pausa cierran el tramo en lugar de estirarlo; el tramo abierto se guarda cada 30 s y, si la aplicación se cae, se cierra al volver a arrancar | La sonda de Linux (`xdotool`/`xprintidle`) es solo para desarrollo; las llamadas Win32 no se han ejecutado en este entorno (ver la nota de Windows) |
-| Privacidad | Las reglas de exclusión descartan la muestra antes de guardarla (gestores de contraseñas, ventanas privadas o de incógnito, en inglés y español); las de ocultación guardan la aplicación y sustituyen el título; las reglas no válidas se rechazan en lugar de ignorarse en silencio; pausa de 15 min, 1 h o hasta reanudar, que se reanuda sola; purga por antigüedad; borrado de un rango (incluidos los tramos que lo solapan y sus entradas de búsqueda); exportación a JSON | Las reglas se aplican desde que se añaden, no a los títulos ya guardados |
+| Captura | Aplicación en primer plano, título de ventana, inactividad y bloqueo, muestreados cada segundo en Windows (`ctypes` + `psutil`); agrupados en tramos activo/ausente/bloqueado; la ausencia empieza cuando dejaste de usar teclado y ratón, no cuando se detecta, salvo en una reunión o un vídeo (también en una pestaña del navegador), que tienen un umbral aparte y más largo (60 min por defecto) antes de que solo lo que pase de él cuente como ausencia; las suspensiones y los momentos excluidos o en pausa cierran el tramo en lugar de estirarlo; el tramo abierto se guarda cada 30 s y, si la aplicación se cae, se cierra al volver a arrancar | La sonda de Linux (`xdotool`/`xprintidle`) es solo para desarrollo; las llamadas Win32 no se han ejecutado en este entorno (ver la nota de Windows) |
+| Privacidad | Las reglas de exclusión descartan la muestra antes de guardarla (gestores de contraseñas, ventanas privadas o de incógnito, en inglés y español); las de ocultación guardan la aplicación y sustituyen el título; las reglas no válidas se rechazan en lugar de ignorarse en silencio; pausa de 15 min, 1 h o hasta reanudar, que se reanuda sola; purga por antigüedad; borrado de un rango (incluidos los tramos que lo solapan y sus entradas de búsqueda), con atajos de últimos 15 min / 30 min / última hora / hoy; exportación de los tramos a CSV o de todo a JSON, opcionalmente para un rango de días | Las reglas se aplican desde que se añaden, no a los títulos ya guardados |
 | Clasificación | Reglas ordenadas por aplicación, expresión regular del título o dominio en el título, con valores por defecto para las aplicaciones habituales de Windows; detección del proyecto en títulos de VS Code (carpetas con guiones, remotas e Insiders), JetBrains y Visual Studio, y por los nombres de los repositorios git encontrados; vista previa ("reclasificaría N tramos"); reaplicación al historial en segundo plano, con progreso | No se lee la barra de direcciones del navegador; una regla de "dominio" busca el texto en el título |
-| Conocimiento derivado | Totales por día, semana o rango, por categoría, aplicación y proyecto, recortados en los bordes del periodo; primera y última actividad; cambios de contexto (>= 10 s); bloques de concentración (>= 25 min, cada interrupción <= 2 min); "dónde estaba" con contextos distintos, su último título, archivos y commits | La concentración se mide por tiempo en ventana; no dice nada de la atención real |
+| Conocimiento derivado | Totales por día, semana o rango, por categoría, aplicación y proyecto, recortados en los bordes del periodo; primera y última actividad; cambios de contexto (>= 10 s); bloques de concentración (>= 25 min, cada interrupción <= 2 min); "dónde estaba" con contextos distintos (primero el trabajo; sin música, chats ni juegos salvo que se pida), sus últimos títulos, archivos (primero los del propio proyecto) y commits | La concentración se mide por tiempo en ventana; no dice nada de la atención real |
 | Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
-| Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
-| API del agente | Ocho herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
+| Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera; un resultado de ventana dice cuánto tiempo estuvo abierta y, en la interfaz, abre su día en ese momento | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
+| API del agente | Ocho herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; los ids y las horas se encadenan de una llamada a la siguiente (`activity_timeline(around=<ts de un resultado>)`); todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
 | Modelos compartidos | "Escribe mi día": una narración breve del día en segunda persona ("You spent the morning on..."; el modelo recibe las instrucciones en inglés y suele responder en inglés), guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un Ollama/llama.cpp/OpenAI-compatible compartido); un día sin nada registrado se rechaza sin llamar al modelo |
-| Interfaz | Hoy (línea de tiempo con zoom, leyenda, detalle fijado y "Escribe mi día"), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Ajustes (Modelos), Actividad del asistente; español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
+| Interfaz | Hoy (línea de tiempo con zoom en la que se ven la ausencia y el bloqueo, leyenda, detalle fijado, tramos accesibles con el teclado, "¿Dónde lo dejé?" y "Escribe mi día"), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Ajustes (Modelos), Actividad del asistente; cada día y cada momento tienen su propia dirección (recargar y Atrás funcionan); español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
 
 Más pantallas: [Buscar](docs/media/search.png) · [Privacidad](docs/media/privacy.png) ·
 [Ajustes](docs/media/settings.png) ·
@@ -109,7 +140,7 @@ ni sqlite. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Pruebas
 
 ```
-.venv/bin/python -m pytest -q          # 251 pasan en unos 14 s
+.venv/bin/python -m pytest -q          # 270 pasan en unos 15 s
 cd frontend && npm ci && npm run build  # 0 errores de TypeScript
 ```
 
@@ -151,7 +182,7 @@ de llamadas.
 - El asistente solo ve lo que devuelven las ocho herramientas y solo puede
   hacer una cosa: pausar (o alargar una pausa). Cada llamada aparece en
   "Actividad del asistente".
-- Los resultados están acotados (de 5 a 40 elementos por defecto, 100 como
+- Los resultados están acotados (de 5 a 20 elementos por defecto, 100 como
   máximo) y los títulos largos se recortan, porque quien los lee es un
   modelo local con un contexto limitado.
 - "Escribe mi día" solo envía al modelo de lenguaje los datos compactos de

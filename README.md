@@ -6,7 +6,7 @@
 
 [Español](README.es.md) · [Run locally](#run-locally-on-windows) · [Connect an AI](docs/MCP.md) · [Portfolio](https://luissalet.github.io/Portfolio/#projects)
 
-![Day view: yesterday's timeline zoomed to the active hours, one segment pinned, totals by category, app and project](docs/media/today.png)
+![Day view: yesterday's timeline zoomed to the active hours with away time hatched, one segment pinned, and the Where was I? card with the last work contexts](docs/media/today.png)
 *Actual application, three days of synthetic demo data (`--demo`, no real window titles).*
 
 ## Why
@@ -20,19 +20,47 @@ locked time, the files they opened and the commits they made. It turns
 that into spans, day summaries, focus blocks and resume-context answers,
 and gives the assistant eight small tools to ask for them.
 
+## Use cases
+
+Eight concrete scenarios, each walked end to end as a person in the browser
+and as a local model over MCP ([docs/USE_CASES.md](docs/USE_CASES.md), findings
+and fixes in [docs/USABILITY_REPORT.md](docs/USABILITY_REPORT.md)):
+
+- **Monday morning, "where was I?"**: the Today screen opens with the last
+  three work contexts before now (project, last titles, files, commits), so
+  Friday's last file is on screen before you pick a day; one click pins that
+  moment in its day's timeline.
+- **"Faustus, ¿dónde lo dejé ayer?"**: one `activity_where_was_i` call,
+  about 500 tokens, answers with the project, the window and the editor
+  title that names the file, skipping the music player and the chat.
+- **A weekly note for the job hunt**: `activity_summary` gives hours per
+  project as ready-to-read strings, and a search for the job boards or the
+  novel's title says how long those windows were open; Faustus writes the
+  note with its own notes tool.
+- **"That FTS5 page from Tuesday"**: search, click the hit and land on that
+  day with the segment pinned (the address keeps it, so reload and Back
+  work); an agent passes the hit's `ts` to `activity_timeline(around=...)`.
+- **Privacy before an interview or the bank**: pause for an hour, private
+  windows (also Spanish "incógnito") and bank pages never become searchable,
+  and "Last 30 min" fills the delete-range pickers for the half hour you
+  forgot.
+- **Hours per project for a chart**: export spans as CSV (local dates and
+  times, minutes, category, project) for a spreadsheet or the data-analysis
+  app.
+
 ## What is implemented
 
 | Area | Available now | Boundary |
 | --- | --- | --- |
-| Collection | Foreground app, window title, idle and locked state sampled every second on Windows (`ctypes` + `psutil`); merged into active/away/locked spans; away time back-dated to when input stopped; sleep gaps and excluded or paused moments close the span instead of bridging it; the open span is flushed every 30 s and a crashed session's span is closed on the next start | The Linux probe (`xdotool`/`xprintidle`) is a development aid; the Win32 calls themselves were not run in this build environment (see the Windows note) |
-| Privacy | Exclusion rules drop a sample before it is stored (password managers, private/incognito windows, EN+ES); redaction rules keep the app and replace the title; invalid rules are rejected, not silently ignored; pause 15 min / 1 h / until resumed, with automatic resume; retention purge; delete a range (overlapping spans and their search rows included); JSON export | Rules apply from the moment they are added, not retroactively to stored titles |
+| Collection | Foreground app, window title, idle and locked state sampled every second on Windows (`ctypes` + `psutil`); merged into active/away/locked spans; away time back-dated to when input stopped, except in a meeting or a video (also one in a browser tab), which get a separate, longer threshold (60 min by default) before only the rest counts as away; sleep gaps and excluded or paused moments close the span instead of bridging it; the open span is flushed every 30 s and a crashed session's span is closed on the next start | The Linux probe (`xdotool`/`xprintidle`) is a development aid; the Win32 calls themselves were not run in this build environment (see the Windows note) |
+| Privacy | Exclusion rules drop a sample before it is stored (password managers, private/incognito windows, EN+ES); redaction rules keep the app and replace the title; invalid rules are rejected, not silently ignored; pause 15 min / 1 h / until resumed, with automatic resume; retention purge; delete a range (overlapping spans and their search rows included), with last 15 min / 30 min / hour / today shortcuts; export spans as CSV or everything as JSON, optionally for a range of days | Rules apply from the moment they are added, not retroactively to stored titles |
 | Classification | Ordered app / title-regex / domain-in-title rules with defaults for common Windows apps; project detection from VS Code (hyphenated folders, remote and Insiders titles), JetBrains and Visual Studio titles, plus the names of discovered git repos; live preview ("would reclassify N spans"); reapply to history as a background job with progress | Browser domains are not read from the address bar; a "domain" rule matches text in the title |
-| Derived knowledge | Day, week and range totals by category/app/project, clipped at the window edges; first/last activity; context switches (>= 10 s dwell); focus blocks (>= 25 min, each interruption <= 2 min); "where was I" with distinct contexts, their last title, files and commits | Focus is measured from window time only; it says nothing about attention |
+| Derived knowledge | Day, week and range totals by category/app/project, clipped at the window edges; first/last activity; context switches (>= 10 s dwell); focus blocks (>= 25 min, each interruption <= 2 min); "where was I" with distinct contexts (work first; music, chat and games left out unless asked), their recent titles, files (the project's own first) and commits | Focus is measured from window time only; it says nothing about attention |
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
-| Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
-| Agent API | Eight tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
+| Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing; a window hit says how long it was open and, in the interface, opens its day at that moment | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
+| Agent API | Eight tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
 | Shared models | "Write my day": a cached, regenerable short narrative of a day ("You spent the morning on..."), from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama/llama.cpp/OpenAI-compatible server); a day with nothing recorded is refused without calling the model |
-| Interface | Today (zoomable timeline, legend, pinned details, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; English/Spanish; light/dark | Desktop layout; not designed for phones |
+| Interface | Today (zoomable timeline with away and locked time drawn, legend, pinned details, keyboard-focusable segments, Where was I?, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; every day and moment has its own address (reload and Back work); English/Spanish; light/dark | Desktop layout; not designed for phones |
 
 More screens: [Search](docs/media/search.png) · [Privacy](docs/media/privacy.png) ·
 [Settings](docs/media/settings.png) ·
@@ -105,7 +133,7 @@ or sqlite imports. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Tests
 
 ```
-.venv/bin/python -m pytest -q          # 251 passed in about 14 s
+.venv/bin/python -m pytest -q          # 270 passed in about 15 s
 cd frontend && npm ci && npm run build  # 0 TypeScript errors
 ```
 
@@ -140,7 +168,7 @@ log.
 - The assistant sees only what the eight tools return and can do exactly
   one thing: pause (or lengthen a pause). Every call is listed in
   "Assistant activity".
-- Results are capped (default 5-40 items, maximum 100) and long titles are
+- Results are capped (default 5-20 items, maximum 100) and long titles are
   truncated, because the intended consumer is a local model with a finite
   context window.
 - "Write my day" only ever sends the compact `activity_summary` data

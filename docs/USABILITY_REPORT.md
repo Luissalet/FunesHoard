@@ -259,6 +259,8 @@ other commit in this repo; each commit is small and self-contained.
 
 ### Left for a later pass, and why
 
+*All of these were done in the re-walk; see "Re-walk after the fixes" below.*
+
 - **A8 (search hits cannot be traced to their surroundings)** and **A9
   (delete-range presets)** and **A10 (CSV export + a range picker in the
   UI)** are UI/UX additions (click-through routing, preset buttons, a new
@@ -278,3 +280,70 @@ other commit in this repo; each commit is small and self-contained.
   as the bar to keep green, not a full browser re-walk. Every fix above has
   its own unit/integration regression test instead. A screenshot re-walk
   after the deferred UI items land would be the natural next step.
+
+## Re-walk after the fixes
+
+Every use case was walked again, on data regenerated with the fixed
+collector (38 repos, 14 days, 90,329 samples -> 572 spans; zero overlapping
+and zero zero-length spans), as a person (`scripts/ui_walkthrough.py`, 1280x800
+English and 1920x1080 Spanish, every screenshot read) and as an agent
+(`scripts/agent_walkthrough.py`, 22 calls over real MCP stdio). Both scripts
+now assert each use case's "done when" and exit non-zero when one fails; the
+final runs pass every check with no console errors and no result carrying an
+image. Tests: 251 -> 270 (every fix below has its regression test; the
+interface changes are checked by the walkthrough's assertions), plus
+`npm ci && npm run build`, the MCP protocol test and the manifest test.
+
+### What the re-walk still found, and what was done
+
+| Use case | Found | Fix | Commit |
+|---|---|---|---|
+| UC3 | The first A3 fix did not hold on real data: the 45-minute Zoom interview was still 45 minutes away and every fan film was away. Once past the threshold, the away span was back-dated to the last input (the start of the call), and films in a browser tab were Browsing with the 2-minute threshold. | Meetings/Media away starts when the threshold is crossed, not at the last input; default 60 min; a streaming-site title rule (YouTube, Netflix, Twitch...) placed before the browser rules, by an ordered migration. Both interviews are now 45 min of Meetings, the films 9.2 h of Media. | `487166a` |
+| UC4 (agent) | Chaining a hit into "what was around it" needed ISO arithmetic by the model. | `activity_timeline(around=<hit ts>)`, +-30 min, every span. | `8968650` |
+| UC3 (agent) | The job search and the novel could be counted, not measured. | Window hits carry `duration_s`/`human`; the result totals them in `windows_open_human` (job boards 38 min, novel 1 h 36 min this week). | `8968650` |
+| UC1/UC2 | "Where was I" named the project but its title was the final terminal (`pwsh - daguerres-hoard`); the file was nowhere, and unrelated files came first. | `recent_titles` (the editor title is the second one); files inside the project's folder first; `app` matches the last title. | `8968650`, `ef2d9a3` |
+| UC1 (person) | No "where was I" in the interface; header said "Today" on Monday. | A "Where was I?" card on Today (before now, or before the shown day ended) with "Show in timeline"; header says Yesterday/Day. | `db73474` |
+| UC4 (person) | A8: a hit was plain text; reload lost the day, Back left the app. | Hash routes for view, day and moment; a hit opens its day with the segment pinned; reload and Back work (checked in the walkthrough). | `db73474` |
+| UC5 | A9: delete range was two bare pickers. | Last 15 min / 30 min / hour / today shortcuts; the confirmation is unchanged. | `db73474` |
+| UC8 | A10: JSON with epoch seconds only. | `GET /api/privacy/export.csv` and a From/To day range in the UI; grouping the CSV by `date` and `project` gives hours per day with stdlib `csv` alone. | `ef2d9a3`, `db73474` |
+| all | A browser reporting `en-US@posix` (headless Chromium on this box) made every date format throw and blanked the whole app. | Such a locale falls back to the default; the walkthrough opens the app once with the browser's own locale. | `db73474` |
+| cosmetic | C2, C3, C4, C6; "0m" for 12-second blips. | Away/locked drawn hatched with legend entries; header; English backend reason behind "Technical details"; focusable segments (Enter pins); "<1m". | `db73474` |
+
+### Verdict per use case
+
+- **UC1 Monday "where was I?"** -- works. The card shows the last three work
+  contexts (project, the editor title naming the file, files, commits) on
+  opening; "Show in timeline" pins the moment.
+- **UC2 "¿dónde lo dejé ayer?"** -- works. One call, ~480 tokens, project
+  first, music and chat skipped, the file in `recent_titles`.
+- **UC3 weekly review** -- works with a caveat: hours per project, the job
+  search and the novel all come as human strings, meetings are counted; the
+  note itself is written by Faustus's notes tool, which was not available
+  here (composed, not saved).
+- **UC4 "that FTS5 page"** -- works, in the UI (click -> pinned moment) and
+  over MCP (`around`).
+- **UC5 privacy** -- works: pause shown with its end time, "incógnito" and
+  the bank page find nothing in the UI or over MCP, delete shortcuts.
+- **UC6 dozens of repos** -- works on Linux: 38 repos, first scan 0.5 s,
+  bad folder refused, "38 repos found, last scanned ...", Projects shows the
+  six own projects only. Git process cost on Windows is still unmeasured.
+- **UC7 back after 50 minutes** -- works: restarted with 3,100 s idle, the
+  away span starts at the end of the last recorded span (no overlap, no
+  52-minute back-dating), `activity_now` says away, and the first input
+  opens an active span.
+- **UC8 hours for a chart** -- works: CSV export with local dates, times,
+  minutes and projects; redacted titles stay `[redacted]`, excluded windows
+  are absent.
+
+### Still open
+
+- The Win32 probe, Windows Recent Items and git cost on Windows remain
+  untested from this environment (see "Not tested").
+- The Models panel in Settings shows the backend's diagnostic reason in
+  English in both languages (it is the diagnostic; the sentence above it is
+  translated).
+- In the interface, "Where was I?" only looks three days back (the same
+  window the tool uses); after a longer absence it says there is nothing to
+  pick up.
+- A title rule still decides streaming vs. browsing: a video on a site the
+  rule does not know stays Browsing with the ordinary threshold.
