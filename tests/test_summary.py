@@ -222,3 +222,15 @@ def test_where_was_i_ranks_a_project_ahead_of_a_bare_app_name():
     ]
     ctxs = where_was_i(spans, before=T0 + 1500, contexts=5)
     assert [c.key for c in ctxs] == ["daguerres-hoard", "Obsidian.exe"]
+
+
+def test_where_was_i_keeps_the_editor_title_behind_a_final_terminal_blip():
+    # Re-walk of UC1/UC2: the context ended in "pwsh - daguerres-hoard", so the
+    # only title given was the terminal's, and the file was nowhere.
+    spans = [
+        span(1, 0, 600, app="Code.exe", title="Gallery.tsx - daguerres-hoard - Visual Studio Code", project="daguerres-hoard"),
+        span(2, 600, 720, app="WindowsTerminal.exe", title="pwsh - daguerres-hoard", project="daguerres-hoard"),
+    ]
+    (ctx,) = where_was_i(spans, before=T0 + 1000, contexts=1)
+    assert ctx.title == "pwsh - daguerres-hoard" and ctx.app == "WindowsTerminal.exe"
+    assert ctx.recent_titles == ["pwsh - daguerres-hoard", "Gallery.tsx - daguerres-hoard - Visual Studio Code"]

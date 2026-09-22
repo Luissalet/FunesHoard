@@ -8,6 +8,8 @@ because the consumer is a small local model with a finite context.
 """
 from __future__ import annotations
 
+import csv
+import io
 import re
 import time
 from datetime import datetime, timedelta
@@ -127,6 +129,7 @@ def activity_where_was_i(
             "project": c.project,
             "app": c.app,
             "title": c.title,
+            "recent_titles": c.recent_titles,
             "start": c.start_ts,
             "end": c.end_ts,
             "duration_s": round(c.duration_s),
@@ -390,6 +393,33 @@ def activity_projects(db: Database, since: Optional[str], limit: int, now: Optio
     return {"since": since_ts, "items": items, "truncated": truncated, "has_more": truncated}
 
 
+# ---------------------------------------------------------------- export --
+CSV_COLUMNS = ("date", "start", "end", "duration_min", "kind", "category", "project", "app", "title")
+
+
+def spans_csv(db: Database, start_ts: float, end_ts: float) -> str:
+    """A10: one row per span, ready for a spreadsheet or a data app -- local
+    date and ISO times with their offset, minutes with a dot decimal, no
+    epoch arithmetic needed. A redacted title stays "[redacted]" (the real
+    one was never stored); excluded windows were never rows at all."""
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(CSV_COLUMNS)
+    rows = db.query(
+        "SELECT * FROM spans WHERE start_ts >= ? AND start_ts < ? AND end_ts > start_ts ORDER BY start_ts",
+        (start_ts, end_ts),
+    )
+    for r in rows:
+        w.writerow([
+            datetime.fromtimestamp(r["start_ts"]).date().isoformat(),
+            iso_local(r["start_ts"]), iso_local(r["end_ts"]),
+            f"{(r['end_ts'] - r['start_ts']) / 60:.2f}",
+            r["kind"], r["category"] or "", r["project"] or "", r["app"] or "",
+            (r["title"] or "") if r["kind"] == "active" else "",
+        ])
+    return buf.getvalue()
+
+
 # ------------------------------------------------------------ agent view --
 _TIME_KEYS = {
     "start", "end", "ts", "since", "now", "before", "until", "paused_until",
@@ -411,6 +441,8 @@ def agent_view(value: Any) -> Any:
         elif k in _TEXT_KEYS and isinstance(v, str) and len(v) > TITLE_MAX:
             out[k] = v[: TITLE_MAX - 1] + "…"
             out[f"{k}_truncated"] = True
+        elif k == "recent_titles" and isinstance(v, list):
+            out[k] = [t if len(t) <= TITLE_MAX else t[: TITLE_MAX - 1] + "…" for t in v]
         else:
             out[k] = agent_view(v)
     return out

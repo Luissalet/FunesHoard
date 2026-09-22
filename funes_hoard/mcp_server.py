@@ -98,8 +98,10 @@ def activity_now() -> dict:
 def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_categories: bool = False) -> dict:
     """Resume context: the last distinct things the user worked on before a
     moment, most recent first, a context with a known project ranked ahead
-    of a bare app name. Each context has its last window title, time range
-    (`human`), duration, up to 5 files opened and 5 commits made meanwhile.
+    of a bare app name. Each context has its last window title (and up to 3
+    `recent_titles`: the editor title naming the file is often the one just
+    before a final terminal), time range (`human`), duration, up to 5 files
+    opened (the project's own first) and 5 commits made meanwhile.
     Away/locked time, alt-tab blips and (by default) Media/Communication/
     Games are skipped -- pass `all_categories=true` to include the music
     player or the chat app anyway. `before` defaults to now; "yesterday"/

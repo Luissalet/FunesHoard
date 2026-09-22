@@ -730,6 +730,15 @@ def create_app(
         payload = {"spans": spans, "file_events": files, "commits": commits, "exported_at": time.time()}
         return JSONResponse(payload, headers={"Content-Disposition": "attachment; filename=funes-export.json"})
 
+    @app.get("/api/privacy/export.csv")
+    def privacy_export_csv(start: Optional[float] = None, end: Optional[float] = None):
+        start = start if start is not None else 0.0
+        end = end if end is not None else time.time()
+        return Response(
+            queries.spans_csv(db, start, end), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=funes-spans.csv"},
+        )
+
     # --------------------------------------------------- classify admin --
     def _validate_classify(rule: ClassifyRuleIn) -> None:
         _validate_rule(rule.match_type, rule.pattern, CLASSIFY_MATCH_TYPES)

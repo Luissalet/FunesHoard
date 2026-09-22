@@ -69,7 +69,9 @@ one is cut at `before`. `contexts` is 1-20. Media, Communication and Games
 are skipped and a context with a project ranks ahead of a bare app, unless
 `all_categories=true`. Files and commits are those recorded during the
 context (up to 5 each); files inside the context's own project folder come
-first.
+first. `recent_titles` holds up to 3 distinct titles of the context, most
+recent first: when it ends in a terminal, the editor title that names the
+file is the second one.
 
 ```json
 {"before": "2026-09-22T00:00:00+02:00",

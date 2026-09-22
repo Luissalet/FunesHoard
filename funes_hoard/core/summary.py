@@ -5,7 +5,7 @@ unit-tested with hand-built fixtures instead of a database.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional
 
 FOCUS_MIN_S = 25 * 60
@@ -156,6 +156,10 @@ class Context:
     end_ts: float
     duration_s: float
     title: str = ""  # the last window title seen in this context
+    # Up to 3 distinct titles, most recent first: the last window is often a
+    # terminal ("pwsh - daguerres-hoard"); the editor title just before it is
+    # the one that names the file.
+    recent_titles: List[str] = field(default_factory=list)
 
 
 # A4: "where was I" should answer with real work first. By default it skips
@@ -192,12 +196,17 @@ def where_was_i(
     for s in active:
         key = s.project or s.app
         if merged and merged[-1].key == key and (s.start_ts - merged[-1].end_ts) <= FOCUS_MAX_GAP_S:
-            merged[-1].end_ts = s.end_ts
-            merged[-1].duration_s += s.duration_s
-            merged[-1].title = s.title
+            c = merged[-1]
+            c.end_ts = s.end_ts
+            c.duration_s += s.duration_s
+            c.title = s.title
+            c.app = s.app  # the app the last title belongs to
+            if s.title:
+                c.recent_titles = ([s.title] + [t for t in c.recent_titles if t != s.title])[:3]
         else:
             merged.append(Context(key=key, app=s.app, project=s.project, start_ts=s.start_ts,
-                                  end_ts=s.end_ts, duration_s=s.duration_s, title=s.title))
+                                  end_ts=s.end_ts, duration_s=s.duration_s, title=s.title,
+                                  recent_titles=[s.title] if s.title else []))
     seen: set = set()
     recent_first: List[Context] = []
     for c in reversed(merged):

@@ -341,3 +341,34 @@ def test_where_was_i_lists_the_projects_own_files_first(tmp_path):
     ctx = queries.activity_where_was_i(db, None, 1, now=now)["contexts"][0]
     assert ctx["files"][0].endswith("funes-hoard/spans.py")
     assert len(ctx["files"]) == 2  # the other file is still there, just second
+
+
+# --- A10/UC8: an export another app can analyse without epoch arithmetic ----
+def test_spans_csv_export_is_analysis_ready(client):
+    import csv
+    import io
+
+    r = client.get("/api/privacy/export.csv")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "funes-spans.csv" in r.headers["content-disposition"]
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    assert rows and list(rows[0]) == ["date", "start", "end", "duration_min", "kind", "category", "project", "app", "title"]
+    first = rows[0]
+    assert first["start"].startswith(first["date"]) and ("+" in first["start"][19:] or "-" in first["start"][19:])
+    assert all(float(row["duration_min"]) > 0 for row in rows)
+    assert any(row["project"] for row in rows)
+    assert all(row["title"] == "" for row in rows if row["kind"] != "active")
+
+
+def test_spans_csv_export_honours_the_range_and_keeps_redaction(client):
+    everything = client.get("/api/privacy/export.csv").text.count("\n")
+    assert client.get("/api/privacy/export.csv", params={"start": 0, "end": 1}).text.count("\n") == 1 < everything
+    db = client.app.state.db
+    t = 1_000_000.0
+    db.execute(
+        "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, category, open)"
+        " VALUES (?, ?, 'active', 'chrome.exe', '', '[redacted]', 'Browsing', 0)", (t, t + 300),
+    )
+    body = client.get("/api/privacy/export.csv", params={"start": t - 1, "end": t + 1}).text
+    assert body.splitlines()[1].endswith(",Browsing,,chrome.exe,[redacted]")
