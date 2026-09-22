@@ -111,10 +111,14 @@ def activity_where_was_i(
     ctxs: List[Context] = _where_was_i(spans, before_ts, contexts, skip_categories=skip)
     out = []
     for c in ctxs:
-        files = db.query(
-            "SELECT path FROM file_events WHERE ts >= ? AND ts < ? ORDER BY ts DESC LIMIT 5",
+        files = [f["path"] for f in db.query(
+            "SELECT path FROM file_events WHERE ts >= ? AND ts < ? ORDER BY ts DESC LIMIT 50",
             (c.start_ts, c.end_ts),
-        )
+        )]
+        if c.project:
+            # Files of this context's own project first: a novel chapter
+            # opened meanwhile is true but is not "the file I was in".
+            files.sort(key=lambda path: not _path_in_project(path, c.project))
         commits = db.query(
             "SELECT subject, sha FROM commits WHERE ts >= ? AND ts < ? ORDER BY ts DESC LIMIT 5",
             (c.start_ts, c.end_ts),
@@ -127,18 +131,36 @@ def activity_where_was_i(
             "end": c.end_ts,
             "duration_s": round(c.duration_s),
             "human": human_range(c.start_ts, c.end_ts, now),
-            "files": [f["path"] for f in files],
+            "files": files[:5],
             "commits": [{"subject": r["subject"], "sha": r["sha"][:10]} for r in commits],
         })
     return {"before": before_ts, "contexts": out}
 
 
+AROUND_S = 30 * 60
+
+
+def _path_in_project(path: str, project: str) -> bool:
+    parts = [p.lower() for p in re.split(r"[\\/]", path)]
+    return project.lower() in parts[:-1]
+
+
 def activity_timeline(
     db: Database, start: Optional[str], end: Optional[str], min_minutes: Optional[float], limit: int,
-    now: Optional[float] = None, offset: int = 0, day: Optional[str] = None,
+    now: Optional[float] = None, offset: int = 0, day: Optional[str] = None, around: Optional[str] = None,
 ) -> dict:
     now = now if now is not None else time.time()
-    start_ts, end_ts = parse_day_or_range(day, start, end, now)
+    if around:
+        # A8: "what was I doing around that hit?" -- the model passes the
+        # hit's own `ts` straight through instead of doing ISO arithmetic.
+        if start or end or day:
+            raise BadInput("bad_arguments", "pass either `around` or `start`/`end`, not both.")
+        center = parse_moment(around, now, "point")
+        start_ts, end_ts = center - AROUND_S, center + AROUND_S
+        if min_minutes is None:
+            min_minutes = 0.0  # a one-hour window is short: show every step
+    else:
+        start_ts, end_ts = parse_day_or_range(day, start, end, now)
     if min_minutes is None:
         # A6: a caller that did not ask for a specific granularity gets a
         # coarser one for anything longer than a day -- a week of every
@@ -283,7 +305,34 @@ def activity_search(
         items = _search_rows(db, query, since_ts, until_ts, limit, marks, True, now)
         matched = "any word"
     truncated = len(items) > limit
-    return {"query": query, "matched": matched, "items": items[:limit], "truncated": truncated, "has_more": truncated}
+    items = _with_span_durations(db, items[:limit], now)
+    result = {"query": query, "matched": matched, "items": items, "truncated": truncated, "has_more": truncated}
+    open_s = sum(it.get("duration_s", 0) for it in items)
+    if open_s:
+        # The sum the model would otherwise have to do itself; covers the
+        # returned hits only (see `truncated`).
+        result["windows_open_s"] = open_s
+        result["windows_open_human"] = format_duration(open_s)
+    return result
+
+
+def _with_span_durations(db: Database, items: List[dict], now: float) -> List[dict]:
+    """A8: a window-title hit says how long that window was open, so "how
+    much time went to the job boards / the novel this week" can be answered
+    from the hits' `human` strings rather than just counted."""
+    ids = [it["ref_id"] for it in items if it["source"] == "span"]
+    if not ids:
+        return items
+    rows = db.query(
+        f"SELECT id, start_ts, end_ts FROM spans WHERE id IN ({','.join('?' * len(ids))})", ids,
+    )
+    spans = {r["id"]: r for r in rows}
+    for it in items:
+        r = spans.get(it["ref_id"]) if it["source"] == "span" else None
+        if r is not None:
+            it["duration_s"] = round(r["end_ts"] - r["start_ts"])
+            it["human"] = human_range(r["start_ts"], r["end_ts"], now)
+    return items
 
 
 def recent_commits(db: Database, since: Optional[str], limit: int, now: Optional[float] = None) -> dict:

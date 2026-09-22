@@ -107,6 +107,7 @@ class TimelineArgs(BaseModel):
     min_minutes: Optional[float] = Field(default=None, ge=0)
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
+    around: Optional[str] = None
 
 
 class SummaryArgs(BaseModel):
@@ -413,8 +414,11 @@ def create_app(
     def agent_timeline(args: TimelineArgs):
         return run_agent(
             "activity_timeline",
-            _args(start=args.start, end=args.end, min_minutes=args.min_minutes, limit=args.limit, offset=args.offset or None),
-            lambda: queries.activity_timeline(db, args.start, args.end, args.min_minutes, args.limit, offset=args.offset),
+            _args(start=args.start, end=args.end, around=args.around, min_minutes=args.min_minutes, limit=args.limit,
+                  offset=args.offset or None),
+            lambda: queries.activity_timeline(
+                db, args.start, args.end, args.min_minutes, args.limit, offset=args.offset, around=args.around,
+            ),
         )
 
     @app.post("/api/agent/activity_summary")

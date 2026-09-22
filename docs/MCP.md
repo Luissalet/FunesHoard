@@ -59,14 +59,17 @@ What is in front of the user right now.
 While paused, `app`/`title`/... are `null` and `paused_until` is the ISO
 end of the pause (`null` for "until resumed").
 
-### activity_where_was_i(before=None, contexts=5)
+### activity_where_was_i(before=None, contexts=5, all_categories=False)
 
 The resume-context call: the last *distinct* contexts before `before`
 (default now), most recent first. A context is one project, or one app when
 no project is known; consecutive spans of it are merged, away/locked time
 and blips under 10 s are skipped, each context appears once, and the last
-one is cut at `before`. `contexts` is 1-20. Files and commits are those
-recorded during the context (up to 5 each).
+one is cut at `before`. `contexts` is 1-20. Media, Communication and Games
+are skipped and a context with a project ranks ahead of a bare app, unless
+`all_categories=true`. Files and commits are those recorded during the
+context (up to 5 each); files inside the context's own project folder come
+first.
 
 ```json
 {"before": "2026-09-22T00:00:00+02:00",
@@ -79,13 +82,17 @@ recorded during the context (up to 5 each).
     "duration_s": 1800, "human": "yesterday 17:25-17:55, 30 min", "files": [], "commits": []}]}
 ```
 
-### activity_timeline(start=None, end=None, min_minutes=2, limit=40, offset=0)
+### activity_timeline(start=None, end=None, min_minutes=None, limit=20, offset=0, around=None)
 
 Spans in chronological order (active, away or locked), clipped to the
 range. Default range: today. A `start` that names a day or period with no
 `end` (`"ayer"`, `"2026-09-20"`, `"this week"`) selects that whole period;
-otherwise the range is `start`..`end` (`end` defaults to now). Spans shorter
-than `min_minutes` are skipped. Page with `offset=next_offset`.
+otherwise the range is `start`..`end` (`end` defaults to now). `around`
+(a search hit's `ts`, or any time word) replaces both with 30 minutes
+either side of that moment; passing it together with `start`/`end` is a
+`400 bad_arguments`. Spans shorter than `min_minutes` are skipped; unset,
+it is 2 for a day or less, 5 for a longer range and 0 with `around`. Page
+with `offset=next_offset`.
 
 ```json
 {"start": "2026-09-21T00:00:00+02:00", "end": "2026-09-22T00:00:00+02:00",
@@ -101,7 +108,8 @@ than `min_minutes` are skipped. Page with `offset=next_offset`.
 
 Totals for a day, a period or a range. `group_by` is `category`, `app`
 (top 10), `project` or `all` and decides which `by_*` maps are returned
-(seconds per key, largest first). Spans are clipped to the window, so a span
+(seconds per key, largest first), each with a `by_*_human` twin of
+ready-to-read strings. Spans are clipped to the window, so a span
 that crosses midnight counts once. `first_activity`/`last_activity` ignore
 away and locked time. `context_switches` counts app changes between spans
 that lasted at least 10 s. A focus block is at least 25 minutes on one
@@ -130,12 +138,16 @@ must match; if that finds nothing and there are several words, any word is
 tried and `matched` becomes `"any word"`. Uses SQLite FTS5 (accent-
 insensitive) when the platform's sqlite3 has it, a `LIKE` search otherwise.
 Redacted titles are never indexed. A query with no letters or digits is a
-`400 empty_query`.
+`400 empty_query`. A window-title hit (`source: "span"`) also carries how
+long that window was open (`duration_s`, `human`), and `windows_open_s`/
+`windows_open_human` add those up over the returned hits; pass a hit's `ts` to
+`activity_timeline(around=...)` for what surrounded it.
 
 ```json
 {"query": "duckdb", "matched": "all words",
  "items": [{"source": "span", "ref_id": 26, "ts": "2026-09-22T10:30:00+02:00",
-            "when": "today 10:30", "text": "[DuckDB] documentation - Google Chrome"}],
+            "when": "today 10:30", "text": "[DuckDB] documentation - Google Chrome",
+            "duration_s": 720, "human": "today 10:30-10:42, 12 min"}],
  "truncated": false, "has_more": false}
 ```
 

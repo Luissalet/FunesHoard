@@ -113,22 +113,24 @@ def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_ca
 @mcp.tool(annotations=_READ)
 def activity_timeline(
     start: Optional[str] = None, end: Optional[str] = None, min_minutes: Optional[float] = None,
-    limit: int = 20, offset: int = 0,
+    limit: int = 20, offset: int = 0, around: Optional[str] = None,
 ) -> dict:
     """Chronological list of activity spans (one window/app at a time, or
     away/locked) for a range, each with a stable `id`, app, title, category,
     project, duration and a `human` time range. Default range: today. A
     single day word or date in `start` (e.g. "ayer", "2026-09-20") selects
-    that whole day; otherwise start..end (end defaults to now). Spans under
-    `min_minutes` are skipped (default: 2 min for a day or less, 5 min for a
-    longer range). `limit` max 100; when `has_more` is true call again with
-    `offset=next_offset`. For a week or more, prefer activity_summary for
-    totals -- this tool's result grows with the range.
-    Keywords: timeline, what did I do, activity log, sequence of the day, which windows, línea de tiempo, qué hice, que hice, historial, cronología del día.
+    that whole day; otherwise start..end (end defaults to now). For "what
+    was I doing around then", pass `around` = a search hit's `ts` (or any
+    time) instead: 30 min either side, every span. Spans under `min_minutes`
+    are skipped (default: 2 min for a day or less, 5 min for a longer
+    range, 0 with `around`). `limit` max 100; when `has_more` is true call
+    again with `offset=next_offset`. For a week or more, prefer
+    activity_summary for totals -- this tool's result grows with the range.
+    Keywords: timeline, what did I do, activity log, sequence of the day, which windows, around then, línea de tiempo, qué hice, que hice, historial, cronología del día, alrededor de, qué hacía entonces.
     """
     return _post(
         "/api/agent/activity_timeline",
-        {"start": start, "end": end, "min_minutes": min_minutes, "limit": limit, "offset": offset},
+        {"start": start, "end": end, "min_minutes": min_minutes, "limit": limit, "offset": offset, "around": around},
     )
 
 
@@ -155,9 +157,13 @@ def activity_search(query: str, since: Optional[str] = None, until: Optional[str
     the words in `query` appeared, newest first. Word prefixes count ("duck"
     finds "DuckDB") and punctuation is ignored. All words must match; if none
     do, any word is tried and `matched` says "any word". Each hit has
-    `source` (span/file/commit), `ref_id`, `when` ("yesterday 16:05") and a
-    short `text` with the match in [brackets]. `since`/`until` accept day
-    words ("since": "ayer" = from yesterday 00:00) or ISO dates. `limit` max 100.
+    `source` (span/file/commit), `ref_id`, `ts`, `when` ("yesterday 16:05")
+    and a short `text` with the match in [brackets]; a window-title hit
+    (span) also has how long it was open (`duration_s`, `human`), and
+    `windows_open_human` totals them for the returned hits. To see
+    what surrounded a hit, call activity_timeline(around=<its ts>).
+    `since`/`until` accept day words ("since": "ayer" = from yesterday
+    00:00) or ISO dates. `limit` max 100.
     Keywords: search, find when, when did I see, that page about, that file called, that commit, buscar, cuándo vi, cuando abrí, esa página sobre, ese archivo llamado, ese commit.
     """
     return _post("/api/agent/activity_search", {"query": query, "since": since, "until": until, "limit": limit})

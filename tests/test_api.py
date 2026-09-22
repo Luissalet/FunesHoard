@@ -300,3 +300,44 @@ def test_commit_repo_accepts_a_real_folder_and_scans_it_right_away(client, tmp_p
     # A background scan was kicked off rather than waiting for the next poll.
     jobs = client.get("/api/jobs").json()["items"]
     assert any(j["kind"] == "git_scan" for j in jobs)
+
+
+# --- A8: from a search hit to what surrounded it ----------------------------
+def test_agent_timeline_around_a_hit_needs_no_date_arithmetic(client):
+    hit = client.post("/api/agent/activity_search", json={"query": "Atlas", "limit": 1}).json()["items"][0]
+    r = client.post("/api/agent/activity_timeline", json={"around": hit["ts"]})
+    assert r.status_code == 200
+    data = r.json()
+    from datetime import datetime
+
+    center = datetime.fromisoformat(hit["ts"]).timestamp()
+    assert datetime.fromisoformat(data["start"]).timestamp() == center - 1800
+    assert datetime.fromisoformat(data["end"]).timestamp() == center + 1800
+    assert data["items"], "the hit's own span is inside its own window"
+
+
+def test_agent_timeline_around_and_start_together_is_an_actionable_error(client):
+    r = client.post("/api/agent/activity_timeline", json={"around": "-1h", "start": "ayer"})
+    assert r.status_code == 400
+    assert "either `around` or `start`/`end`" in r.json()["message"]
+
+
+def test_where_was_i_lists_the_projects_own_files_first(tmp_path):
+    from funes_hoard import queries
+    from funes_hoard.db import Database
+
+    db = Database(tmp_path)
+    now = 1_800_000_000.0
+    db.execute(
+        "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, category, project, open)"
+        " VALUES (?, ?, 'active', 'Code.exe', '', 'spans.py - funes-hoard - Visual Studio Code', 'Coding', 'funes-hoard', 0)",
+        (now - 3600, now - 600),
+    )
+    for k, path in enumerate([
+        "C:/Users/me/Desktop/Side projects/funes-hoard/spans.py",
+        "C:/Users/me/Documents/Novela/Capitulo 8.docx",
+    ]):
+        db.execute("INSERT INTO file_events(ts, path, app_hint) VALUES (?, ?, '')", (now - 3000 + k * 600, path))
+    ctx = queries.activity_where_was_i(db, None, 1, now=now)["contexts"][0]
+    assert ctx["files"][0].endswith("funes-hoard/spans.py")
+    assert len(ctx["files"]) == 2  # the other file is still there, just second

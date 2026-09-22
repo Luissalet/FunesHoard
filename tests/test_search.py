@@ -42,3 +42,25 @@ def test_like_wildcards_in_the_query_are_literal(db):
 def test_since_until_bound_the_results(db):
     assert queries.activity_search(db, "duckdb", "-10m", None, 10, now=NOW)["items"] == []
     assert len(queries.activity_search(db, "duckdb", "-2h", None, 10, now=NOW)["items"]) == 1
+
+
+def test_a_window_title_hit_says_how_long_the_window_was_open(db):
+    # A8/UC3: "how much of the week went to job boards" needs a duration per
+    # hit, not just a count of appearances.
+    item = queries.activity_search(db, "duckdb", None, None, 10, now=NOW)["items"][0]
+    assert item["duration_s"] == 100
+    assert item["human"].endswith(", 2 min")  # 100 s, rounded like every other human string
+
+
+def test_file_and_commit_hits_have_no_invented_duration(db):
+    fid = db.execute("INSERT INTO file_events(ts, path, app_hint) VALUES (?, ?, 'md')", (NOW - 60, "C:/x/duckdb-notes.md"))
+    db.index_text("file", fid, NOW - 60, "C:/x/duckdb-notes.md")
+    items = queries.activity_search(db, "duckdb", None, None, 10, now=NOW)["items"]
+    file_hit = next(i for i in items if i["source"] == "file")
+    assert "duration_s" not in file_hit
+
+
+def test_search_totals_how_long_the_matching_windows_were_open(db):
+    res = queries.activity_search(db, "duckdb atlas", None, None, 10, now=NOW)  # any-word: both spans
+    assert res["windows_open_s"] == 200
+    assert res["windows_open_human"] == "3 min"

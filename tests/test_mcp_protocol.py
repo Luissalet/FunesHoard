@@ -94,6 +94,12 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
             hits = await session.call_tool("activity_search", {"query": "funes-hoard OR \"", "limit": 3})
             assert hits.isError is not True
 
+            # A8: a hit's ts chains straight into the timeline around it.
+            atlas = json.loads((await session.call_tool("activity_search", {"query": "Atlas", "limit": 1})).content[0].text)
+            around = await session.call_tool("activity_timeline", {"around": atlas["items"][0]["ts"]})
+            assert around.isError is not True
+            assert json.loads(around.content[0].text)["items"]
+
             bad = await session.call_tool("activity_timeline", {"start": "next blursday"})
             assert bad.isError is True
             assert "bad_time: cannot parse time" in bad.content[0].text
