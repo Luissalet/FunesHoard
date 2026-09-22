@@ -183,6 +183,25 @@ def test_restart_after_a_crash_does_not_backdate_away_before_persisted_history(t
     assert rows[0]["start_ts"] == T0 + 100  # floored at the last persisted span's end
 
 
+def test_zero_length_span_stub_is_never_persisted(tmp_path):
+    # C1: idle jumps enough that the back-dated away span swallows the
+    # active span entirely (start == end == T0), leaving a zero-length stub.
+    # The gap between ticks (80s) stays under the 90s sleep-gap threshold,
+    # so this exercises the backdate-collapse path, not the sleep-gap one.
+    db = Database(tmp_path / "data")
+    probe = make_probe([
+        ("Code.exe", "x - Foo - Visual Studio Code", 0, False),
+        ("Code.exe", "x - Foo - Visual Studio Code", 200, False),  # idle >= 120s: away, backdated to T0
+    ])
+    c = Collector(db, probe, interval_s=1)
+    c.tick(now=T0)
+    c.tick(now=T0 + 80)
+    active_rows = db.query("SELECT * FROM spans WHERE kind = 'active'")
+    assert active_rows == []  # the zero-length active stub must never be written
+    away_rows = db.query("SELECT * FROM spans WHERE kind = 'away'")
+    assert len(away_rows) == 1 and away_rows[0]["start_ts"] == T0
+
+
 def test_pause_at_least_never_shortens_or_ends_an_existing_pause(tmp_path):
     db = Database(tmp_path / "data")
     c = Collector(db, make_probe([("a", "b", 0, False)]), interval_s=1)

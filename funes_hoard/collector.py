@@ -216,6 +216,15 @@ class Collector:
             return 1
 
     def _persist_close(self, span: Span) -> None:
+        if span.duration_s <= 0:
+            # C1: a zero-length stub -- e.g. an active span entirely
+            # swallowed by a back-dated away span starting at its own
+            # start -- has no real duration to record, and left alone it
+            # shows up as a "0m" row everywhere and in the search index.
+            if self._open_row_id is not None:
+                self.db.execute("DELETE FROM spans WHERE id = ?", (self._open_row_id,))
+                self._open_row_id = None
+            return
         category, project = self._classify(span)
         version = self._rules_version()
         if self._open_row_id is not None:
