@@ -1,6 +1,8 @@
 import subprocess
+import time
 from pathlib import Path
 
+from funes_hoard.collector import _known_repo_names
 from funes_hoard.db import Database
 from funes_hoard.git_watch import GitCommitsPoller, find_git_repos, scan_repo
 
@@ -109,3 +111,42 @@ def test_configured_authors_override_identity(tmp_path):
     db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
     db.set_meta("commit_authors", "luissalet, alex@example.com")
     assert GitCommitsPoller(db).poll_once() == 0
+
+
+# --- B3 regression: a repo only counts as a project while it has a recent,
+# author-matched commit; merely existing under the root is not enough -----
+def test_a_clone_by_another_author_never_becomes_a_project(tmp_path):
+    root = tmp_path / "projects"
+    _init_repo(root / "atlas", "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
+    # A clone of someone else's project, generic name -- exactly the "python"
+    # / "tools" / "react" case from the usability report: the folder exists
+    # and has commits, but none of them are the user's.
+    _init_repo(root / "python", "Some Contributor", "contrib@example.com", "docs: readme")
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    db.set_meta("commit_authors", "luissalet")
+    GitCommitsPoller(db).poll_once()
+
+    names = _known_repo_names(db)
+    assert "atlas" in names
+    assert "python" not in names
+    # ... and so a job ad or docs page merely containing the word "python"
+    # must not be classified into that project.
+    from funes_hoard.core.classify import detect_project
+
+    assert detect_project("Senior Python Engineer (Remote, EU) | LinkedIn", names) is None
+
+
+def test_an_old_abandoned_repo_ages_out_of_being_a_project(tmp_path):
+    root = tmp_path / "projects"
+    _init_repo(root / "notes", "Luissalet", "luissalet@users.noreply.github.com", "feat: ancient")
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    db.set_meta("commit_authors", "luissalet")
+    GitCommitsPoller(db).poll_once()
+    assert "notes" in _known_repo_names(db)
+
+    # Back-date the only commit past the 90-day recency window.
+    db.execute("UPDATE commits SET ts = ?", (time.time() - 200 * 86400,))
+    db.set_meta("known_repos", "[]")  # also simulate a poll since then finding nothing new
+    assert "notes" not in _known_repo_names(db)

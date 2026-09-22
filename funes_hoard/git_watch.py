@@ -19,6 +19,13 @@ from funes_hoard.db import Database
 
 _LOG_FORMAT = "%H%x1f%at%x1f%s%x1f%an%x1f%ae%x1e"
 
+# B3: a repo name only doubles as a project name (matched as a word in every
+# window title) while it has a commit by the configured/own author within
+# this many days. A clone of someone else's project never gets a commit row
+# at all (its authors never match), so it never qualifies; an old, abandoned
+# repo of the user's own ages out instead of matching forever.
+PROJECT_RECENCY_DAYS = 90
+
 
 class CommitEvent(NamedTuple):
     ts: float
@@ -131,12 +138,10 @@ class GitCommitsPoller:
         repos = self.db.query("SELECT * FROM commit_repos WHERE enabled = 1")
         configured = self.author_filters if self.author_filters is not None else configured_authors(self.db)
         total = 0
-        discovered: set = set()
         for r in repos:
             path = Path(r["path"])
             since = r["last_scan_ts"] or 0.0
             for repo_dir in find_git_repos(path):
-                discovered.add(repo_dir.name)
                 filters = configured or repo_identity(repo_dir)
                 events = scan_repo(repo_dir, since, filters)
                 for ev in events:
@@ -153,6 +158,12 @@ class GitCommitsPoller:
                         self.db.index_text("commit", row_id, ev.ts, f"{ev.subject} {ev.repo}")
                     total += 1
             self.db.execute("UPDATE commit_repos SET last_scan_ts = ? WHERE id = ?", (time.time(), r["id"]))
-        # Repo names double as project names for classification.
-        self.db.set_meta("known_repos", json.dumps(sorted(discovered)))
+        # B3: repo names double as project names for classification, but a
+        # repo only qualifies while it actually has a recent commit by the
+        # configured/own author -- a clone of someone else's project (whose
+        # commits are never kept, since their author never matches) must
+        # never become a project just because its `.git` folder exists.
+        cutoff = time.time() - PROJECT_RECENCY_DAYS * 86400
+        recent = self.db.query("SELECT DISTINCT repo FROM commits WHERE ts >= ?", (cutoff,))
+        self.db.set_meta("known_repos", json.dumps(sorted(row["repo"] for row in recent)))
         return total

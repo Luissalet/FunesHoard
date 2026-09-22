@@ -17,6 +17,7 @@ from funes_hoard.core.classify import ClassifyRule, classify
 from funes_hoard.core.privacy import PauseState, PrivacyRule, apply_privacy
 from funes_hoard.core.spans import Sample, Span, SpanBuilder
 from funes_hoard.db import Database
+from funes_hoard.git_watch import PROJECT_RECENCY_DAYS
 
 logger = logging.getLogger("funes_hoard.collector")
 
@@ -44,14 +45,18 @@ def _load_privacy_rules(db: Database, kind: str) -> List[PrivacyRule]:
 
 
 def _known_repo_names(db: Database) -> List[str]:
-    """Names of the git repos the commits source knows about.
+    """Names of the git repos that currently count as projects.
 
-    These come from repos actually discovered under the configured roots
-    (stored by the git poller) and from recorded commits -- never from the
-    root folder itself, which is usually a parent like "Projects" that
-    would otherwise be matched as a project in every title.
+    B3: a repo name is matched as a word in every window title, so it must
+    earn that -- only a repo with a commit by the configured/own author in
+    the last `PROJECT_RECENCY_DAYS` days qualifies. A clone of someone
+    else's project never has such a commit (its authors never match the
+    filter), and an old, abandoned repo of the user's own ages out instead
+    of matching forever. Never the root folder itself, which is usually a
+    parent like "Projects" that would otherwise match every title.
     """
-    names = {r["repo"] for r in db.query("SELECT DISTINCT repo FROM commits")}
+    cutoff = time.time() - PROJECT_RECENCY_DAYS * 86400
+    names = {r["repo"] for r in db.query("SELECT DISTINCT repo FROM commits WHERE ts >= ?", (cutoff,))}
     try:
         stored = json.loads(db.get_meta("known_repos", "[]") or "[]")
         names.update(n for n in stored if isinstance(n, str))

@@ -94,9 +94,14 @@ def test_known_repo_names_come_from_discovered_repos_not_the_root_folder(tmp_pat
     from funes_hoard.collector import _known_repo_names
     from funes_hoard.db import Database
 
+    import time
+
     db = Database(tmp_path)
     db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", ("C:\\Users\\me\\Desktop\\Side projects",))
-    db.execute("INSERT INTO commits(ts, repo, sha, subject, author) VALUES (1, 'funes-hoard', 'abc', 's', 'a')")
+    db.execute(
+        "INSERT INTO commits(ts, repo, sha, subject, author) VALUES (?, 'funes-hoard', 'abc', 's', 'a')",
+        (time.time(),),
+    )
     db.set_meta("known_repos", '["babels-hoard"]')
     names = _known_repo_names(db)
     assert "Side projects" not in names
