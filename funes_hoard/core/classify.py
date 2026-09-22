@@ -61,11 +61,34 @@ def default_rules() -> List[ClassifyRule]:
         ("app", "Photoshop.exe", "Design", None),
         ("app", "LockApp.exe", "System", None),
         ("app", "explorer.exe", "System", None),
+        ("app", "Faustus.exe", "Coding", None),
+        ("app", "Microsoft.Photos.exe", "Media", None),
     ]
     return [
         ClassifyRule(id=-(i + 1), order_idx=i, match_type=mt, pattern=p, category=c, project=proj)
         for i, (mt, p, c, proj) in enumerate(rows)
     ]
+
+
+# Bump whenever `default_rules()` gains a new rule that an existing database
+# (seeded only once, when its classify_rules table was empty) should also
+# pick up. `db.py._migrate_classify_defaults` applies `migrate_default_rules`
+# below without disturbing anything the user added or reordered themselves.
+CLASSIFY_DEFAULTS_VERSION = 2
+
+_DEFAULT_RULES_ADDED_SINCE_V1: List[Tuple[str, str, str, Optional[str]]] = [
+    ("app", "Faustus.exe", "Coding", None),
+    ("app", "Microsoft.Photos.exe", "Media", None),
+]
+
+
+def migrate_default_rules(existing: List[dict]) -> List[Tuple[str, str, str, Optional[str]]]:
+    """New default rules (match_type, pattern, category, project) to add to
+    an existing database. Only added when nothing already matches that
+    (match_type, pattern) -- a rule the user added or re-mapped for the
+    same app is left exactly as they made it."""
+    existing_keys = {(r["match_type"], r["pattern"]) for r in existing}
+    return [r for r in _DEFAULT_RULES_ADDED_SINCE_V1 if (r[0], r[1]) not in existing_keys]
 
 
 _VSCODE_NAMES = {"visual studio code", "vscode"}

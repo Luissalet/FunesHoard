@@ -111,6 +111,28 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
 
 
 @pytest.mark.asyncio
+async def test_mcp_adapter_does_not_log_every_call_to_stderr(live_app, tmp_path):
+    # C7: the mcp SDK logs "Processing request of type ..." at INFO for
+    # every call by default -- the host only needs real problems there.
+    port = live_app
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(REPO_ROOT / "funes_hoard" / "mcp_server.py")],
+        env={"FUNES_URL": f"http://127.0.0.1:{port}"},
+    )
+    errlog_path = tmp_path / "stderr.log"
+    with open(errlog_path, "w", encoding="utf-8") as errlog:
+        async with stdio_client(params, errlog=errlog) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await session.list_tools()
+                await session.call_tool("activity_now", {})
+                await session.call_tool("activity_summary", {"day": "today"})
+    stderr_text = errlog_path.read_text(encoding="utf-8")
+    assert "Processing request of type" not in stderr_text
+
+
+@pytest.mark.asyncio
 async def test_mcp_adapter_raises_tool_error_when_app_not_running():
     params = StdioServerParameters(
         command=sys.executable,

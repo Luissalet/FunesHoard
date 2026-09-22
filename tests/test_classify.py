@@ -1,4 +1,30 @@
-from funes_hoard.core.classify import ClassifyRule, classify, default_rules, detect_project
+from funes_hoard.core.classify import (
+    ClassifyRule,
+    classify,
+    default_rules,
+    detect_project,
+    migrate_default_rules,
+)
+
+
+# --- C5: Faustus.exe and Microsoft.Photos.exe had no default rule and fell
+# into Other -----------------------------------------------------------
+def test_default_rules_classify_faustus_as_coding():
+    cat, _ = classify("Faustus.exe", "", "Faustus", default_rules())
+    assert cat == "Coding"
+
+
+def test_default_rules_classify_photos_as_media():
+    cat, _ = classify("Microsoft.Photos.exe", "", "IMG_0001.jpg", default_rules())
+    assert cat == "Media"
+
+
+def test_migrate_default_rules_adds_only_whats_missing():
+    existing = [{"match_type": "app", "pattern": "Faustus.exe"}]  # user already has this one
+    additions = migrate_default_rules(existing)
+    patterns = {a[1] for a in additions}
+    assert "Faustus.exe" not in patterns
+    assert "Microsoft.Photos.exe" in patterns
 
 
 def test_default_rules_classify_vscode_as_coding():

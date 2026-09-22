@@ -155,6 +155,16 @@ def test_agent_summary_group_by_is_honoured_and_validated(client):
     assert {"by_category", "by_app", "by_project"} <= set(ui)
 
 
+def test_agent_summary_totals_come_with_a_human_sibling_map(client):
+    # A7: by_*_human means the model never has to convert seconds itself.
+    from funes_hoard.timeparse import format_duration
+
+    body = client.post("/api/agent/activity_summary", json={"day": "ayer", "group_by": "project"}).json()
+    assert body["by_project"], "fixture day must have at least one project"
+    for project, seconds in body["by_project"].items():
+        assert body["by_project_human"][project] == format_duration(seconds)
+
+
 def test_agent_timeline_offset_paginates(client):
     first = client.post("/api/agent/activity_timeline", json={"start": "-3d", "limit": 2, "min_minutes": 0}).json()
     assert first["has_more"] and first["next_offset"] == 2

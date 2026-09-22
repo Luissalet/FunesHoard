@@ -180,7 +180,11 @@ def activity_summary(
             items = list(totals[f"by_{key}"].items())
             if key == "app":
                 items = items[:10]
+            # A7: the server instructions tell the model to answer from
+            # *_human strings, but by_category/by_app/by_project were bare
+            # seconds -- a "human" sibling map means it never has to convert.
             result[f"by_{key}"] = {k: round(v) for k, v in items}
+            result[f"by_{key}_human"] = {k: format_duration(v) for k, v in items}
     result.update({
         "first_activity": totals["first_activity"],
         "last_activity": totals["last_activity"],

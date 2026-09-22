@@ -19,6 +19,9 @@ from mcp.types import ToolAnnotations
 
 # httpx logs every request at INFO on stderr; the host only needs real problems.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+# C7: the mcp SDK itself logs "Processing request of type ..." at INFO for
+# every single call -- noise for a host that just wants tool results.
+logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
 
 APP_NAME = "Funes's Hoard"
 DEFAULT_URL = "http://127.0.0.1:8813"
@@ -129,11 +132,12 @@ def activity_summary(
     day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, group_by: str = "category",
 ) -> dict:
     """Time totals for a day, week or range: active and away time (seconds
-    plus `active_human`), totals in seconds grouped by `group_by` =
-    "category" | "app" | "project" | "all", first/last activity, number of
-    context switches and focus blocks (>= 25 min on one project/category,
-    interruptions <= 2 min). `day` takes today/hoy, yesterday/ayer, "this
-    week"/"esta semana", "last week" or an ISO date; or pass `start`/`end`.
+    plus `active_human`), totals grouped by `group_by` = "category" | "app" |
+    "project" | "all" as both seconds (`by_*`) and ready-to-read strings
+    (`by_*_human`), first/last activity, number of context switches and
+    focus blocks (>= 25 min on one project/category, interruptions <= 2
+    min). `day` takes today/hoy, yesterday/ayer, "this week"/"esta semana",
+    "last week", a weekday name or an ISO date; or pass `start`/`end`.
     Default: today. For "how much time on project X", use group_by="project".
     Keywords: summary, how did I spend my day, time spent, how many hours, focus time, productivity, week report, resumen del día, en qué he gastado el tiempo, cuántas horas, cuanto tiempo, tiempo de foco, productividad, resumen semanal.
     """

@@ -212,6 +212,7 @@ class Database:
                         (r.kind, r.match_type, r.pattern),
                     )
             self._migrate_privacy_defaults(conn)
+            self._migrate_classify_defaults(conn)
             conn.commit()
 
     def _migrate_columns(self, conn: sqlite3.Connection) -> None:
@@ -221,6 +222,32 @@ class Database:
             conn.execute("ALTER TABLE commit_repos ADD COLUMN last_repo_count INTEGER")
         except sqlite3.OperationalError:
             pass  # already has it
+
+    def _migrate_classify_defaults(self, conn: sqlite3.Connection) -> None:
+        """C5: bring a pre-existing database's default classify rules up to
+        date (e.g. Faustus.exe/Photos, previously falling into Other) without
+        touching anything the user added, edited or reordered."""
+        from funes_hoard.core.classify import CLASSIFY_DEFAULTS_VERSION, migrate_default_rules
+
+        key = "classify_defaults_version"
+        current = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        current_version = int(current["value"]) if current and current["value"] else 1
+        if current_version >= CLASSIFY_DEFAULTS_VERSION:
+            return
+        existing = [dict(r) for r in conn.execute("SELECT match_type, pattern FROM classify_rules").fetchall()]
+        additions = migrate_default_rules(existing)
+        if additions:
+            max_order = conn.execute("SELECT COALESCE(MAX(order_idx), -1) m FROM classify_rules").fetchone()["m"]
+            for i, (match_type, pattern, category, project) in enumerate(additions, start=1):
+                conn.execute(
+                    "INSERT INTO classify_rules(order_idx, match_type, pattern, category, project, enabled)"
+                    " VALUES (?, ?, ?, ?, ?, 1)",
+                    (max_order + i, match_type, pattern, category, project),
+                )
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(CLASSIFY_DEFAULTS_VERSION)),
+        )
 
     def _migrate_privacy_defaults(self, conn: sqlite3.Connection) -> None:
         """Bring a pre-existing database's default privacy rules up to date
