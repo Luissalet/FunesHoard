@@ -1,3 +1,5 @@
+<img src="app-icon.png" width="96" alt="">
+
 # Funes's Hoard
 ### Where was I? What was I doing before lunch? How much of this week actually went to Faustus?
 **Your computer's episodic memory: foreground app, window, files opened and commits made, kept in a local SQLite file and filtered for privacy before anything is written.**
@@ -29,9 +31,11 @@ and gives the assistant eight small tools to ask for them.
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
 | Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
 | Agent API | Eight tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
-| Interface | Today (zoomable timeline, legend, pinned details), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Assistant activity; English/Spanish; light/dark | Desktop layout; not designed for phones |
+| Shared models | "Write my day": a cached, regenerable first-person narrative of a day, from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama/llama.cpp/OpenAI-compatible server) |
+| Interface | Today (zoomable timeline, legend, pinned details, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; English/Spanish; light/dark | Desktop layout; not designed for phones |
 
 More screens: [Search](docs/media/search.png) · [Privacy](docs/media/privacy.png) ·
+[Settings](docs/media/settings.png) ·
 [Assistant activity](docs/media/assistant-activity.png) (real calls made through
 the agent API by `scripts/screenshots.py`, including a rejected one).
 
@@ -55,6 +59,16 @@ It works with any MCP client over stdio; [docs/MCP.md](docs/MCP.md) has the
 output of every tool, the error codes and a config snippet. The skill
 [`skills/where-was-i/SKILL.md`](skills/where-was-i/SKILL.md) tells a local
 model which tool to pick and the traps.
+
+## Shared models
+
+The only feature that needs a language model, "Write my day", never loads
+one of its own: it uses [Hoard Link](funes_hoard/hoard_link/), the same
+resolver every Faustus plugin app shares, in this order -- explicit
+override in Settings, then Faustus's own model registry, then a shared
+llama.cpp/Ollama/OpenAI-compatible server already running on this machine. The
+rest of the app works fully without any model at all, and Settings says
+exactly why when one is not available.
 
 ## Run locally on Windows
 
@@ -91,7 +105,7 @@ or sqlite imports. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Tests
 
 ```
-.venv/bin/python -m pytest -q          # 179 passed in about 10 s
+.venv/bin/python -m pytest -q          # 201 passed in about 10 s
 cd frontend && npm ci && npm run build  # 0 TypeScript errors
 ```
 
@@ -99,13 +113,17 @@ The suite covers span merging, away/locked back-dating, sleep gaps,
 excluded and paused interludes, crash flushing and stale open spans;
 privacy rules (asserting the excluded row never exists) and rule
 validation; pause expiry and the agent's extend-only pause; retention and
-delete-range including the search index; the `.lnk` parser on fixtures
-built in the tests (ANSI, Unicode, suffix, truncated); project detection
-from editor titles; focus blocks, switches, clipping and where-was-i on
-scripted days; date words in both languages and their range edges; search
-on both the FTS5 and `LIKE` paths with hostile input; the browser guard
-(host and origin ports, `null` origin), the SPA path-traversal fix and the
-exact agent route list; the Windows probe logic with the Win32 calls faked
+delete-range including the search index and the "Write my day" cache;
+the `.lnk` parser on fixtures built in the tests (ANSI, Unicode, suffix,
+truncated); project detection from editor titles; focus blocks, switches,
+clipping and where-was-i on scripted days; date words in both languages
+and their range edges; search on both the FTS5 and `LIKE` paths with
+hostile input; the browser guard (host and origin ports, `null` origin),
+the SPA path-traversal fix and the exact agent route list; the shared
+model backend (`backend.json` persistence and merging, the token never
+echoed back, resolved/unavailable Settings states, the Re-check swap, and
+"Write my day" caching/regeneration/disabling against a fake Link, never
+a real network call); the Windows probe logic with the Win32 calls faked
 (tick wraparound, access-denied executables); git scanning with UTF-8
 subjects, author filters and hidden consoles; the CLI; the manifest check;
 and an MCP protocol test that spawns `mcp_server.py` over stdio against a
@@ -124,6 +142,10 @@ log.
 - Results are capped (default 5-40 items, maximum 100) and long titles are
   truncated, because the intended consumer is a local model with a finite
   context window.
+- "Write my day" only ever sends the compact `activity_summary` data
+  (categories, apps, projects, durations, focus blocks) to the language
+  model -- never raw or redacted window titles -- and can be turned off in
+  Settings; deleting a day's history also deletes its cached narrative.
 
 ### Boundaries
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Sparkles } from "lucide-react";
 import {
   api,
   errorMessage,
@@ -6,6 +7,7 @@ import {
   formatDuration,
   formatLongDate,
   isoDay,
+  type DayNarrative,
   type SpanItem,
   type SummaryResponse,
   type TimelineResponse,
@@ -171,6 +173,8 @@ export function TodayView({ lang }: { lang: Lang }) {
         </div>
       </div>
 
+      <WriteMyDayCard day={day} lang={lang} />
+
       <div className="grid grid-4" style={{ marginTop: 16 }}>
         <div className="card">
           <div className="stat-label">{t.active_time}</div>
@@ -227,6 +231,72 @@ export function TodayView({ lang }: { lang: Lang }) {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+function WriteMyDayCard({ day, lang }: { day: string; lang: Lang }) {
+  const t = STRINGS[lang];
+  const [narrative, setNarrative] = useState<DayNarrative | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    api
+      .dayNarrative(day)
+      .then((n) => !cancelled && setNarrative(n))
+      .catch((err) => !cancelled && setError(errorMessage(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [day]);
+
+  async function write(force: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.generateDayNarrative(day, force);
+      setNarrative((prev) => (prev ? { ...prev, text: res.text, model: res.model, generated_at: res.generated_at } : prev));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!narrative || !narrative.enabled) return null;
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <div className="section-title">
+          <Sparkles size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+          {t.write_my_day}
+        </div>
+        <button
+          className="btn"
+          disabled={busy || !narrative.available}
+          title={!narrative.available ? narrative.reason || undefined : undefined}
+          onClick={() => write(Boolean(narrative.text))}
+        >
+          {busy ? t.working : narrative.text ? t.regenerate : t.write_my_day_button}
+        </button>
+      </div>
+      {narrative.text ? (
+        <>
+          <p style={{ margin: "10px 0 4px" }}>{narrative.text}</p>
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            {t.written_with} {narrative.model || "?"}
+          </p>
+        </>
+      ) : (
+        <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
+          {narrative.available ? t.write_my_day_hint : narrative.reason}
+        </p>
+      )}
+      {error && <p className="form-error">{error}</p>}
     </div>
   );
 }

@@ -26,6 +26,8 @@ funes_hoard/
   timeparse.py      date-word / relative-offset parsing (hoy/ayer/-2h/...), ISO output
   errors.py         BadInput: {error, message} 400s raised from the query layer
   demo.py           --demo synthetic data, built by driving the real Collector
+  backend.py        Hoard Link config load/save + the "Write my day" prompt
+  hoard_link/       vendored shared model backend (see "Model backend" below)
   api.py            FastAPI app: guard middleware, UI API, /api/agent/*
   mcp_server.py     standalone stdio MCP adapter (HTTP client only)
   __main__.py       CLI entry point
@@ -85,8 +87,10 @@ per `Database` instance rather than one per query (the collector writes
 every second). All access goes through `Database.execute`/`query`/
 `query_one`, serialised by a `threading.RLock`; the connection is closed on
 shutdown. Tables: `spans`, `file_events`, `commits`, `commit_repos`,
-`classify_rules`, `privacy_rules`, `agent_calls`, `meta` (settings such as
-`paused_until`, `retention_days`, `commit_authors`, `known_repos`).
+`classify_rules`, `privacy_rules`, `agent_calls`, `day_narratives` (the
+"Write my day" cache, one row per calendar day), `meta` (settings such as
+`paused_until`, `retention_days`, `commit_authors`, `known_repos`,
+`write_my_day_enabled`).
 
 Search uses an FTS5 table (`search_fts`, `unicode61 remove_diacritics 2`)
 when the platform's `sqlite3` supports it (checked at startup,
@@ -122,6 +126,40 @@ retention remove the index rows with the table rows.
   interpreter, so the launcher's PID is not the one holding the port);
   `scripts/stop.ps1` uses it, verifies the command line, and falls back to
   the process listening on the port.
+
+## Model backend
+
+Funes's Hoard vendors [Hoard Link](../funes_hoard/hoard_link/), the shared
+resolver every Faustus plugin app uses so a GPU-bound machine is never
+asked to load a second model server: `funes_hoard/backend.py` turns
+`data/backend.json` plus the environment into a `LinkConfig` for one `Link`
+per app (`app.state.link`, created at startup and `await`-closed at
+shutdown), and builds the prompt for the one feature that needs a model.
+
+- **`GET /api/backend`** returns `await link.status()` (every capability's
+  `Resolution`, honest about *why* nothing resolved) plus whether "Write my
+  day" is enabled. **`PUT /api/backend/config`** merges a UI patch into
+  `backend.json` (`funes_hoard/backend.py::apply_config_patch`) and, since
+  Hoard Link never caches explicit configuration, just swaps
+  `link.config` in place -- no reconnect needed. The Faustus token is
+  never echoed back, only `faustus_token_set`. **`POST /api/backend/recheck`**
+  clears Hoard Link's 30 s loopback-probe cache the only way that never
+  touches the vendored file: it builds a fresh `Link` (via
+  `app.state.link_factory`, real `Link` unless a test overrides it) and
+  closes the old one.
+- **"Write my day"** (`POST /api/day-narrative`, UI-only -- not one of the
+  eight agent tools) sends `queries.agent_view(activity_summary(...))` --
+  the exact compact shape the `activity_summary` MCP tool returns, never
+  raw or redacted window titles -- to `link.chat(capability="llm")`, and
+  caches the result in `day_narratives` keyed by calendar day
+  (`day_start_ts` lets retention/delete-range purge it like any other
+  table when its day is removed). A `write_my_day_enabled` meta flag lets
+  the human turn the feature off; either way the app works with no model
+  running at all, `resolve("llm")`'s `reason` string explaining what is
+  missing directly in the Settings screen and on the Today card.
+- `link` / `link_factory` are constructor parameters of `create_app` purely
+  for tests (`tests/fakes.py::FakeLink`): the suite never makes a real
+  network call.
 
 ## Decisions worth explaining
 

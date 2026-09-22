@@ -81,6 +81,10 @@ def main() -> None:
         page.wait_for_timeout(500)
         page.screenshot(path=str(MEDIA_DIR / "assistant-activity.png"))
 
+        page.click("text=Settings")
+        page.wait_for_timeout(500)
+        page.screenshot(path=str(MEDIA_DIR / "settings.png"))
+
         browser.close()
 
     print(f"Wrote screenshots to {MEDIA_DIR}")

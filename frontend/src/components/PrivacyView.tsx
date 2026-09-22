@@ -208,6 +208,7 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
                     spans: res.deleted.spans ?? 0,
                     files: res.deleted.file_events ?? 0,
                     commits: res.deleted.commits ?? 0,
+                    narratives: res.deleted.day_narratives ?? 0,
                   }),
                 );
               } catch (err) {

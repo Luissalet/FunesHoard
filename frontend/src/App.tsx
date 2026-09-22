@@ -9,6 +9,7 @@ import { FilesCommitsView } from "./components/FilesCommitsView";
 import { RulesView } from "./components/RulesView";
 import { PrivacyView } from "./components/PrivacyView";
 import { AssistantActivityView } from "./components/AssistantActivityView";
+import { SettingsView } from "./components/SettingsView";
 import { api, type StatusInfo } from "./api";
 import { detectLang, STRINGS, type Lang } from "./i18n";
 
@@ -21,6 +22,7 @@ const TITLES: Record<ViewId, keyof typeof STRINGS["en"]> = {
   rules: "nav_rules",
   privacy: "nav_privacy",
   assistant: "nav_assistant",
+  settings: "nav_settings",
 };
 
 function loadTheme(): ThemeMode {
@@ -74,6 +76,7 @@ export default function App() {
           {view === "rules" && <RulesView lang={lang} />}
           {view === "privacy" && <PrivacyView lang={lang} status={status} onStatusChange={refreshStatus} />}
           {view === "assistant" && <AssistantActivityView lang={lang} />}
+          {view === "settings" && <SettingsView lang={lang} />}
         </div>
       </div>
     </div>

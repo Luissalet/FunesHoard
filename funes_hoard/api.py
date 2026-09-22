@@ -527,12 +527,22 @@ def create_app(
     @app.get("/api/backend")
     async def backend_status():
         cfg = app.state.link.config
+        # cfg.faustus_urls always has a value (Hoard Link's built-in probe
+        # default), so the *explicit* override shown in Settings comes from
+        # the raw file instead -- otherwise saving any other field would
+        # silently pin that default into backend.json as if the user had
+        # typed it.
+        raw = backend.read_backend_json(data_dir)
+        raw_faustus = raw.get("faustus") or {}
+        raw_llm = (raw.get("capabilities") or {}).get("llm") or {}
         return {
             "capabilities": await app.state.link.status(),
             "only_resident": cfg.only_resident,
-            "faustus_url": cfg.faustus_urls[0] if cfg.faustus_urls else None,
+            "faustus_url": raw_faustus.get("url"),
             "faustus_token_set": bool(cfg.faustus_token),
             "write_my_day_enabled": _write_my_day_enabled(),
+            "llm_url_override": raw_llm.get("url"),
+            "llm_model_override": raw_llm.get("model"),
         }
 
     @app.put("/api/backend/config")

@@ -4,6 +4,7 @@ import {
   FolderKanban,
   ListChecks,
   Search,
+  Settings as SettingsIcon,
   ShieldCheck,
   Sparkles,
   Clock,
@@ -12,7 +13,7 @@ import type { Lang } from "../i18n";
 import { STRINGS } from "../i18n";
 import { formatClock, type StatusInfo } from "../api";
 
-export type ViewId = "today" | "week" | "search" | "projects" | "files" | "rules" | "privacy" | "assistant";
+export type ViewId = "today" | "week" | "search" | "projects" | "files" | "rules" | "privacy" | "assistant" | "settings";
 
 const ITEMS: { id: ViewId; icon: typeof Clock; key: keyof typeof STRINGS["en"] }[] = [
   { id: "today", icon: Clock, key: "nav_today" },
@@ -23,6 +24,7 @@ const ITEMS: { id: ViewId; icon: typeof Clock; key: keyof typeof STRINGS["en"] }
   { id: "rules", icon: ListChecks, key: "nav_rules" },
   { id: "privacy", icon: ShieldCheck, key: "nav_privacy" },
   { id: "assistant", icon: Sparkles, key: "nav_assistant" },
+  { id: "settings", icon: SettingsIcon, key: "nav_settings" },
 ];
 
 export function Sidebar({

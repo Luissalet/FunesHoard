@@ -1,3 +1,5 @@
+<img src="app-icon.png" width="96" alt="">
+
 # Funes's Hoard
 ### ¿Dónde me había quedado? ¿Qué hacía antes de comer? ¿Cuánto de esta semana se fue de verdad en Faustus?
 **La memoria episódica de tu ordenador: aplicación en primer plano, ventana, archivos abiertos y commits, guardados en un SQLite local y filtrados por privacidad antes de escribir nada.**
@@ -30,9 +32,11 @@ contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 | Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
 | Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
 | API del agente | Ocho herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
-| Interfaz | Hoy (línea de tiempo con zoom, leyenda y detalle fijado), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Actividad del asistente; español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
+| Modelos compartidos | "Escribe mi día": una narración en primera persona del día, guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un Ollama/llama.cpp/OpenAI-compatible compartido) |
+| Interfaz | Hoy (línea de tiempo con zoom, leyenda, detalle fijado y "Escribe mi día"), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Ajustes (Modelos), Actividad del asistente; español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
 
 Más pantallas: [Buscar](docs/media/search.png) · [Privacidad](docs/media/privacy.png) ·
+[Ajustes](docs/media/settings.png) ·
 [Actividad del asistente](docs/media/assistant-activity.png) (llamadas reales hechas
 a través de la API del agente por `scripts/screenshots.py`, incluida una rechazada).
 
@@ -56,6 +60,18 @@ Funciona con cualquier cliente MCP por stdio; en [docs/MCP.md](docs/MCP.md)
 están la salida de cada herramienta, los códigos de error y un ejemplo de
 configuración. La skill [`skills/where-was-i/SKILL.md`](skills/where-was-i/SKILL.md)
 le explica a un modelo local qué herramienta usar y en qué trampas no caer.
+
+## Modelos compartidos
+
+La única función que necesita un modelo de lenguaje, "Escribe mi día",
+nunca carga uno propio: usa [Hoard Link](funes_hoard/hoard_link/), el
+mismo resolutor que comparten todas las aplicaciones del ecosistema
+Faustus, en este orden -- el ajuste manual de Settings, después el
+registro de modelos de la propia Faustus, y por último un servidor
+llama.cpp/Ollama/OpenAI-compatible compartido que ya esté en marcha en este
+equipo. El resto de la aplicación funciona por completo sin ningún
+modelo, y Ajustes explica exactamente por qué cuando no hay ninguno
+disponible.
 
 ## Ejecutar en local en Windows
 
@@ -93,7 +109,7 @@ ni sqlite. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Pruebas
 
 ```
-.venv/bin/python -m pytest -q          # 179 pasan en unos 10 s
+.venv/bin/python -m pytest -q          # 201 pasan en unos 10 s
 cd frontend && npm ci && npm run build  # 0 errores de TypeScript
 ```
 
@@ -102,21 +118,27 @@ suspensiones, los intervalos excluidos o en pausa, el guardado periódico y
 los tramos que quedan abiertos tras una caída; las reglas de privacidad
 (comprobando que la fila excluida no llega a existir) y su validación; la
 expiración de la pausa y la pausa del agente, que solo alarga; la purga y
-el borrado de rangos, incluido el índice de búsqueda; el lector de `.lnk`
-con ficheros construidos en las propias pruebas (ANSI, Unicode, sufijo,
-truncado); la detección de proyecto en títulos de editores; los bloques de
-concentración, los cambios de contexto, el recorte por periodo y "dónde
-estaba" con días simulados; las palabras de fecha en ambos idiomas y qué
-extremo del periodo representan; la búsqueda con FTS5 y con `LIKE` ante
-entradas hostiles; el filtro contra ataques desde el navegador (puertos de
-Host y Origin, origen `null`), la corrección del acceso a archivos fuera de
-la interfaz y la lista exacta de rutas del agente; la lógica de la sonda
-de Windows con las llamadas Win32 simuladas (desbordamiento del contador,
-ejecutables sin permiso); el escaneo de git con asuntos UTF-8, filtros de
-autor y sin ventanas de consola; la línea de comandos; el manifiesto; y una
-prueba de protocolo MCP que lanza `mcp_server.py` por stdio contra la
-aplicación en marcha y comprueba las palabras clave, las anotaciones, los
-errores y el registro de llamadas.
+el borrado de rangos, incluido el índice de búsqueda y el resumen guardado
+de "Escribe mi día"; el lector de `.lnk` con ficheros construidos en las
+propias pruebas (ANSI, Unicode, sufijo, truncado); la detección de
+proyecto en títulos de editores; los bloques de concentración, los
+cambios de contexto, el recorte por periodo y "dónde estaba" con días
+simulados; las palabras de fecha en ambos idiomas y qué extremo del
+periodo representan; la búsqueda con FTS5 y con `LIKE` ante entradas
+hostiles; el filtro contra ataques desde el navegador (puertos de Host y
+Origin, origen `null`), la corrección del acceso a archivos fuera de la
+interfaz y la lista exacta de rutas del agente; el modelo compartido (la
+persistencia y combinación de `backend.json`, que el token nunca se
+devuelve, los estados resuelto/no disponible en Ajustes, el
+intercambio al volver a comprobar, y "Escribe mi día" -- guardado,
+regeneración y desactivación -- contra un `Link` simulado, nunca una
+llamada de red real); la lógica de la sonda de Windows con las llamadas
+Win32 simuladas (desbordamiento del contador, ejecutables sin permiso);
+el escaneo de git con asuntos UTF-8, filtros de autor y sin ventanas de
+consola; la línea de comandos; el manifiesto; y una prueba de protocolo
+MCP que lanza `mcp_server.py` por stdio contra la aplicación en marcha y
+comprueba las palabras clave, las anotaciones, los errores y el registro
+de llamadas.
 
 ## Privacidad y límites
 
@@ -131,6 +153,11 @@ errores y el registro de llamadas.
 - Los resultados están acotados (de 5 a 40 elementos por defecto, 100 como
   máximo) y los títulos largos se recortan, porque quien los lee es un
   modelo local con un contexto limitado.
+- "Escribe mi día" solo envía al modelo de lenguaje los datos compactos de
+  `activity_summary` (categorías, aplicaciones, proyectos, duraciones,
+  bloques de concentración) -- nunca títulos de ventana reales u
+  ocultados -- y se puede desactivar en Ajustes; borrar el historial de un
+  día también borra su narración guardada.
 
 ### Límites
 

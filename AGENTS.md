@@ -10,6 +10,15 @@ Reglas para agentes de código que trabajen en este repositorio.
   pura y así se mantiene testeable sin levantar la app.
 - `funes_hoard/mcp_server.py` es un script independiente: solo puede
   importar stdlib, `httpx` y `mcp`. Nunca `from funes_hoard import ...`.
+- `funes_hoard/hoard_link/` es una copia exacta de otro repositorio
+  (`hoard-link`, ver `VENDORED.txt`). **Nunca la edites**: cualquier
+  necesidad nueva va en `funes_hoard/backend.py`, que la envuelve. Para
+  actualizarla, sustituye la carpeta entera y corre `pytest tests/test_backend.py`.
+- Cualquier función nueva que use un modelo (LLM, visión...) pasa por
+  `app.state.link` (`Link` de Hoard Link), nunca carga un servidor propio.
+  Debe seguir funcionando -- desactivada con una razón legible -- cuando
+  no hay ningún modelo disponible, y sus pruebas usan `tests/fakes.py::FakeLink`,
+  nunca una red real.
 
 ## Al añadir una capacidad para el agente
 

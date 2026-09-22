@@ -138,6 +138,44 @@ export interface CommitRepo {
   last_scan_ts: number | null;
 }
 
+export interface Resolution {
+  capability: string;
+  provider: string | null;
+  url: string | null;
+  model: string | null;
+  api: string | null;
+  state: "resolved" | "unavailable";
+  reason: string;
+  details: Record<string, unknown>;
+}
+
+export interface BackendStatus {
+  capabilities: Record<string, Resolution>;
+  only_resident: boolean;
+  faustus_url: string | null;
+  faustus_token_set: boolean;
+  write_my_day_enabled: boolean;
+  llm_url_override: string | null;
+  llm_model_override: string | null;
+}
+
+export interface BackendConfigPatch {
+  only_resident?: boolean;
+  faustus_url?: string;
+  faustus_token?: string;
+  capabilities?: Record<string, { url?: string; model?: string }>;
+}
+
+export interface DayNarrative {
+  day: string;
+  text: string | null;
+  model: string | null;
+  generated_at: number | null;
+  enabled: boolean;
+  available: boolean;
+  reason: string | null;
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -212,6 +250,21 @@ export const api = {
   deleteCommitRepo: (id: number) => req("DELETE", `/api/commit-repos/${id}`),
   commitAuthors: () => req<{ authors: string[] }>("GET", "/api/commit-authors"),
   setCommitAuthors: (authors: string[]) => req<{ authors: string[] }>("PUT", "/api/commit-authors", { authors }),
+
+  backendStatus: () => req<BackendStatus>("GET", "/api/backend"),
+  saveBackendConfig: (patch: BackendConfigPatch) =>
+    req<{ saved: boolean; faustus_token_set: boolean }>("PUT", "/api/backend/config", patch),
+  recheckBackend: () => req<{ ok: boolean }>("POST", "/api/backend/recheck"),
+
+  dayNarrative: (day?: string) => req<DayNarrative>("GET", `/api/day-narrative${qs({ day })}`),
+  generateDayNarrative: (day?: string, force = false) =>
+    req<{ day: string; text: string; model: string | null; generated_at: number; cached: boolean }>(
+      "POST",
+      "/api/day-narrative",
+      { day, force },
+    ),
+  writeMyDaySetting: () => req<{ enabled: boolean }>("GET", "/api/settings/write-my-day"),
+  setWriteMyDaySetting: (enabled: boolean) => req<{ enabled: boolean }>("PUT", "/api/settings/write-my-day", { enabled }),
 };
 
 export function formatDuration(seconds: number): string {

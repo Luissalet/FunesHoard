@@ -81,6 +81,20 @@ def test_backend_status_reports_unavailable_honestly(app_link):
     assert body["capabilities"]["llm"]["state"] == "unavailable"
     assert body["faustus_token_set"] is False
     assert body["write_my_day_enabled"] is True
+    # Hoard Link always has a *default* Faustus probe address internally,
+    # but nothing was ever explicitly configured here -- Settings must not
+    # show (and later silently re-save) that default as if it were one.
+    assert body["faustus_url"] is None
+    assert body["llm_url_override"] is None
+    assert body["llm_model_override"] is None
+
+
+def test_backend_status_reflects_a_saved_override(app_link):
+    client, _link, _ = app_link
+    client.put("/api/backend/config", json={"faustus_url": "http://127.0.0.1:7000", "capabilities": {"llm": {"model": "qwen"}}})
+    body = client.get("/api/backend").json()
+    assert body["faustus_url"] == "http://127.0.0.1:7000"
+    assert body["llm_model_override"] == "qwen"
 
 
 def test_backend_status_reports_a_resolved_model(app_link):

@@ -20,7 +20,10 @@ export function Header({
   const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : SunMoon;
   return (
     <header className="header">
-      <h2>{title}</h2>
+      <div className="header-title">
+        <img src="/favicon-192.png" width={28} height={28} alt="" className="header-icon" />
+        <h2>{title}</h2>
+      </div>
       <div className="header-right">
         <button className="icon-button" title="Language" onClick={() => onLangChange(lang === "en" ? "es" : "en")}>
           <Globe size={16} />
