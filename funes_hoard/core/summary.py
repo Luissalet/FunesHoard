@@ -158,8 +158,21 @@ class Context:
     title: str = ""  # the last window title seen in this context
 
 
-def where_was_i(spans: List[SpanRow], before: float, contexts: int = 5) -> List[Context]:
-    """Last N *distinct* work contexts before `before`, most recent first.
+# A4: "where was I" should answer with real work first. By default it skips
+# these categories entirely (the music player and the group chat are not
+# "where you were", even if they were the very last window focused) --
+# `skip_categories=()` restores the old, unfiltered behaviour.
+DEFAULT_SKIP_CATEGORIES = frozenset({"Media", "Communication", "Games"})
+
+
+def where_was_i(
+    spans: List[SpanRow],
+    before: float,
+    contexts: int = 5,
+    skip_categories: Optional[frozenset] = DEFAULT_SKIP_CATEGORIES,
+) -> List[Context]:
+    """Last N *distinct* work contexts before `before`, most recent first,
+    with a context that has a known project ranked ahead of a bare app name.
 
     Skips away/locked time and alt-tab blips (< 10 s), merges consecutive
     active spans that share a project (or app when no project is set), and
@@ -171,6 +184,7 @@ def where_was_i(spans: List[SpanRow], before: float, contexts: int = 5) -> List[
             replace(s, end_ts=min(s.end_ts, before))
             for s in spans
             if s.kind == "active" and s.start_ts < before and s.duration_s >= SWITCH_MIN_DWELL_S
+            and not (skip_categories and s.category in skip_categories)
         ),
         key=lambda s: s.start_ts,
     )
@@ -185,12 +199,13 @@ def where_was_i(spans: List[SpanRow], before: float, contexts: int = 5) -> List[
             merged.append(Context(key=key, app=s.app, project=s.project, start_ts=s.start_ts,
                                   end_ts=s.end_ts, duration_s=s.duration_s, title=s.title))
     seen: set = set()
-    out: List[Context] = []
+    recent_first: List[Context] = []
     for c in reversed(merged):
         if c.key in seen:
             continue
         seen.add(c.key)
-        out.append(c)
-        if len(out) >= contexts:
-            break
-    return out
+        recent_first.append(c)
+    # Stable sort: a project-bearing context comes first, most recent within
+    # each group first -- recency order from the loop above is preserved.
+    recent_first.sort(key=lambda c: c.project is None)
+    return recent_first[:contexts]

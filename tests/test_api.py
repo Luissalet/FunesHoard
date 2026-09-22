@@ -189,6 +189,17 @@ def test_agent_where_was_i_has_titles_and_distinct_contexts(client):
     assert all(c["title"] for c in body["contexts"])
 
 
+def test_agent_where_was_i_skips_media_unless_asked_for(client):
+    # A4: Spotify (Media) is in the demo data but must not crowd out real
+    # work by default; all_categories=true restores the old behaviour.
+    default = client.post("/api/agent/activity_where_was_i", json={"before": "yesterday", "contexts": 10}).json()
+    assert not any(c["app"] == "Spotify.exe" for c in default["contexts"])
+    unfiltered = client.post(
+        "/api/agent/activity_where_was_i", json={"before": "yesterday", "contexts": 10, "all_categories": True}
+    ).json()
+    assert any(c["app"] == "Spotify.exe" for c in unfiltered["contexts"])
+
+
 def test_agent_search_since_a_day_word_means_from_its_midnight(client):
     body = client.post("/api/agent/activity_search", json={"query": "Visual Studio Code", "since": "yesterday", "limit": 50}).json()
     assert body["items"], "since=yesterday must mean from yesterday 00:00, not from 24 h ago this second"

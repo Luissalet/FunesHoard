@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from funes_hoard.core.summary import (
-    Context, SpanRow, clip_spans, day_totals, focus_blocks, where_was_i as _where_was_i,
+    Context, DEFAULT_SKIP_CATEGORIES, SpanRow, clip_spans, day_totals, focus_blocks, where_was_i as _where_was_i,
 )
 from funes_hoard.db import Database
 from funes_hoard.errors import BadInput
@@ -98,13 +98,17 @@ def activity_now(db: Database, collector) -> dict:
     return result
 
 
-def activity_where_was_i(db: Database, before: Optional[str], contexts: int, now: Optional[float] = None) -> dict:
+def activity_where_was_i(
+    db: Database, before: Optional[str], contexts: int, now: Optional[float] = None,
+    all_categories: bool = False,
+) -> dict:
     now = now if now is not None else time.time()
     before_ts = min(parse_moment(before, now, "end"), now)
     contexts = max(1, min(contexts, 20))
     lookback = 3 * 86400.0
     spans = get_spans(db, before_ts - lookback, before_ts)
-    ctxs: List[Context] = _where_was_i(spans, before_ts, contexts)
+    skip = frozenset() if all_categories else DEFAULT_SKIP_CATEGORIES
+    ctxs: List[Context] = _where_was_i(spans, before_ts, contexts, skip_categories=skip)
     out = []
     for c in ctxs:
         files = db.query(

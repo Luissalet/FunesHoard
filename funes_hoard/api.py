@@ -96,6 +96,7 @@ class PauseArgs(BaseModel):
 class WhereWasIArgs(BaseModel):
     before: Optional[str] = None
     contexts: int = Field(default=5, ge=1, le=20)
+    all_categories: bool = False
 
 
 class TimelineArgs(BaseModel):
@@ -402,8 +403,8 @@ def create_app(
     @app.post("/api/agent/activity_where_was_i")
     def agent_where_was_i(args: WhereWasIArgs):
         return run_agent(
-            "activity_where_was_i", _args(before=args.before, contexts=args.contexts),
-            lambda: queries.activity_where_was_i(db, args.before, args.contexts),
+            "activity_where_was_i", _args(before=args.before, contexts=args.contexts, all_categories=args.all_categories),
+            lambda: queries.activity_where_was_i(db, args.before, args.contexts, all_categories=args.all_categories),
         )
 
     @app.post("/api/agent/activity_timeline")
@@ -491,8 +492,8 @@ def create_app(
         return queries.activity_projects(db, since, limit)
 
     @app.get("/api/where-was-i")
-    def ui_where_was_i(before: Optional[str] = None, contexts: int = 5):
-        return queries.activity_where_was_i(db, before, contexts)
+    def ui_where_was_i(before: Optional[str] = None, contexts: int = 5, all_categories: bool = False):
+        return queries.activity_where_was_i(db, before, contexts, all_categories=all_categories)
 
     @app.get("/api/agent-calls")
     def ui_agent_calls(limit: int = 50):

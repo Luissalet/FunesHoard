@@ -187,3 +187,38 @@ def test_first_and_last_activity_ignore_away_and_locked_time():
     ]
     totals = day_totals(spans)
     assert totals["first_activity"] == T0 + 600 and totals["last_activity"] == T0 + 1200
+
+
+# --- A4: "where was I" answers with real work, not the music player --------
+def test_where_was_i_skips_media_and_communication_by_default():
+    spans = [
+        span(1, 0, 600, project="daguerres-hoard", app="Code.exe", category="Coding"),
+        span(2, 600, 900, project=None, app="Spotify.exe", category="Media", title="Focus playlist"),
+        span(3, 900, 1200, project=None, app="WhatsApp.exe", category="Communication", title="Chat"),
+    ]
+    ctxs = where_was_i(spans, before=T0 + 1500, contexts=3)
+    keys = [c.key for c in ctxs]
+    assert "Spotify.exe" not in keys and "WhatsApp.exe" not in keys
+    assert "daguerres-hoard" in keys
+
+
+def test_where_was_i_all_categories_restores_old_behaviour():
+    spans = [
+        span(1, 0, 600, project="daguerres-hoard", app="Code.exe", category="Coding"),
+        span(2, 600, 900, project=None, app="Spotify.exe", category="Media", title="Focus playlist"),
+    ]
+    ctxs = where_was_i(spans, before=T0 + 1500, contexts=5, skip_categories=frozenset())
+    keys = [c.key for c in ctxs]
+    assert "Spotify.exe" in keys
+
+
+def test_where_was_i_ranks_a_project_ahead_of_a_bare_app_name():
+    # Obsidian (no project) is the most recent, but a real project should
+    # still come first -- this was the exact "Spotify before daguerres-hoard"
+    # complaint once Media/Communication no longer explain it away.
+    spans = [
+        span(1, 0, 600, project="daguerres-hoard", app="Code.exe", category="Coding", title="a"),
+        span(2, 600, 1200, project=None, app="Obsidian.exe", category="Writing", title="notes.md"),
+    ]
+    ctxs = where_was_i(spans, before=T0 + 1500, contexts=5)
+    assert [c.key for c in ctxs] == ["daguerres-hoard", "Obsidian.exe"]
