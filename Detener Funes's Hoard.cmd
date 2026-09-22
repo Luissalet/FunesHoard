@@ -1,5 +1,5 @@
 @echo off
 setlocal
 set "HERE=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%HERE%scripts\stop.ps1"
-pause
+powershell -NoProfile -ExecutionPolicy Bypass -File "%HERE%scripts\stop.ps1" %*
+timeout /t 3 >nul

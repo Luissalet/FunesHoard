@@ -5,6 +5,7 @@ Flags: --port, --data-dir, --demo, --no-browser
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import threading
 import time
@@ -14,7 +15,7 @@ from pathlib import Path
 import uvicorn
 
 from funes_hoard import __version__
-from funes_hoard.api import create_app
+from funes_hoard.api import PID_FILE, create_app
 
 DEFAULT_PORT = 8813
 
@@ -41,7 +42,9 @@ def main() -> None:
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--no-browser", action="store_true")
-    parser.add_argument("--host", type=str, default="127.0.0.1")
+    # Loopback only: the app holds the user's screen history and has no
+    # authentication, so it must never listen on a LAN interface.
+    parser.add_argument("--host", type=str, default="127.0.0.1", choices=["127.0.0.1", "localhost", "::1"])
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir) if args.data_dir else _default_data_dir(args.demo)
@@ -61,8 +64,20 @@ def main() -> None:
 
         threading.Thread(target=_open, daemon=True).start()
 
+    _write_pid_file(data_dir, args.port)
     print(f"Funes's Hoard v{__version__} - {data_dir} - http://{args.host}:{args.port}/")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+
+def _write_pid_file(data_dir: Path, port: int) -> None:
+    """scripts/stop.ps1 reads this. On Windows the venv's python.exe is a
+    launcher that runs the real interpreter as a child, so the launcher's
+    PID (what Start-Process returns) is not the process holding the port.
+    The app removes the file on a graceful shutdown (see api.lifespan)."""
+    try:
+        (data_dir / PID_FILE).write_text(json.dumps({"pid": os.getpid(), "port": port}), encoding="utf-8")
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

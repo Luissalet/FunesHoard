@@ -1,9 +1,10 @@
 """SQLite storage (stdlib sqlite3, WAL mode).
 
-One connection per thread via a small pool-free helper: sqlite3 connections
-are cheap and the app is a single-user local tool, so we open a fresh
-connection per call with `check_same_thread=False` guarded by a lock for
-writes. This keeps the module simple and dependency-free.
+One shared connection (`check_same_thread=False`) serialised by a
+re-entrant lock: the app is a single-user local tool whose heaviest writer
+is the 1 Hz collector, so one connection is simpler and cheaper than a
+pool. WAL mode keeps an external reader (a backup, a sqlite shell) from
+blocking the collector.
 """
 from __future__ import annotations
 
@@ -116,6 +117,13 @@ class Database:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
+    def close(self) -> None:
+        """Close the shared connection (app shutdown); later calls reopen it."""
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+
     def connect(self) -> sqlite3.Connection:
         """The app's single shared connection.
 
@@ -125,6 +133,8 @@ class Database:
         than opening a fresh connection for every call, at up to 1 sample/s)
         is both correct and far cheaper.
         """
+        if self._conn is None:
+            self._conn = self._new_connection()
         return self._conn
 
     def _init_fts(self, conn: sqlite3.Connection) -> bool:

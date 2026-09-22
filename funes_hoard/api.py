@@ -5,8 +5,10 @@ and the `/api/agent/*` surface that the MCP adapter is a thin wrapper over.
 """
 from __future__ import annotations
 
+import json
 import logging
 import logging.handlers
+import os
 import re
 import sys
 import time
@@ -34,20 +36,39 @@ from funes_hoard.retention import delete_range, run_retention
 from funes_hoard.scheduler import BackgroundScheduler
 
 SERVICE = "funes-hoard"
+PID_FILE = "funes.pid"
 DISPLAY_NAME = "Funes's Hoard"
 
 
 def _setup_logging(data_dir: Path) -> None:
     log_dir = data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    handler = logging.handlers.RotatingFileHandler(
-        log_dir / "app.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
-    )
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    root = logging.getLogger("funes_hoard")
-    root.setLevel(logging.INFO)
-    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
-        root.addHandler(handler)
+    handler = None
+    # uvicorn's own errors (e.g. "address already in use") go to the same
+    # file: when started hidden by start.ps1 there is no console to read.
+    for name, level in (("funes_hoard", logging.INFO), ("uvicorn.error", logging.WARNING)):
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
+        if any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers):
+            continue
+        if handler is None:
+            # delay=True: the file is only opened on the first record, so an
+            # app created in tests does not keep a handle open (Windows
+            # cannot delete a temp dir holding an open file).
+            handler = logging.handlers.RotatingFileHandler(
+                log_dir / "app.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8", delay=True
+            )
+            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        logger.addHandler(handler)
+
+
+def _remove_own_pid_file(data_dir: Path) -> None:
+    pid_file = data_dir / PID_FILE
+    try:
+        if json.loads(pid_file.read_text(encoding="utf-8")).get("pid") == os.getpid():
+            pid_file.unlink()
+    except (OSError, ValueError):
+        pass
 
 
 def _pick_probe(demo: bool):
@@ -223,6 +244,8 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         finally:
             scheduler.stop()
             collector.stop()
+            db.close()
+            _remove_own_pid_file(data_dir)
 
     app = FastAPI(title=DISPLAY_NAME, lifespan=lifespan)
     app.state.db = db
