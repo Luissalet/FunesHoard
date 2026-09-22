@@ -32,7 +32,7 @@ contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 | Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
 | Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
 | API del agente | Ocho herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
-| Modelos compartidos | "Escribe mi día": una narración en primera persona del día, guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un Ollama/llama.cpp/OpenAI-compatible compartido) |
+| Modelos compartidos | "Escribe mi día": una narración breve del día en segunda persona ("You spent the morning on..."; el modelo recibe las instrucciones en inglés y suele responder en inglés), guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un Ollama/llama.cpp/OpenAI-compatible compartido); un día sin nada registrado se rechaza sin llamar al modelo |
 | Interfaz | Hoy (línea de tiempo con zoom, leyenda, detalle fijado y "Escribe mi día"), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Ajustes (Modelos), Actividad del asistente; español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
 
 Más pantallas: [Buscar](docs/media/search.png) · [Privacidad](docs/media/privacy.png) ·
@@ -109,7 +109,7 @@ ni sqlite. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Pruebas
 
 ```
-.venv/bin/python -m pytest -q          # 201 pasan en unos 10 s
+.venv/bin/python -m pytest -q          # 205 pasan en unos 10 s
 cd frontend && npm ci && npm run build  # 0 errores de TypeScript
 ```
 
@@ -131,8 +131,9 @@ interfaz y la lista exacta de rutas del agente; el modelo compartido (la
 persistencia y combinación de `backend.json`, que el token nunca se
 devuelve, los estados resuelto/no disponible en Ajustes, el
 intercambio al volver a comprobar, y "Escribe mi día" -- guardado,
-regeneración y desactivación -- contra un `Link` simulado, nunca una
-llamada de red real); la lógica de la sonda de Windows con las llamadas
+regeneración, desactivación y el rechazo de días vacíos y respuestas
+vacías -- contra un `Link` simulado, más una pasada por el resolvedor real
+con un transporte HTTP simulado, nunca una llamada de red real); la lógica de la sonda de Windows con las llamadas
 Win32 simuladas (desbordamiento del contador, ejecutables sin permiso);
 el escaneo de git con asuntos UTF-8, filtros de autor y sin ventanas de
 consola; la línea de comandos; el manifiesto; y una prueba de protocolo

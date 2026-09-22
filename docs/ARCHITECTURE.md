@@ -153,7 +153,11 @@ shutdown), and builds the prompt for the one feature that needs a model.
   raw or redacted window titles -- to `link.chat(capability="llm")`, and
   caches the result in `day_narratives` keyed by calendar day
   (`day_start_ts` lets retention/delete-range purge it like any other
-  table when its day is removed). A `write_my_day_enabled` meta flag lets
+  table when its day is removed). A day with no active time is refused
+  (`no_activity`) before any model call, so nothing invented is ever
+  cached; an empty answer (a reasoning model that spent its whole
+  `NARRATIVE_MAX_TOKENS` budget thinking) is `llm_empty` and not stored
+  either. A `write_my_day_enabled` meta flag lets
   the human turn the feature off; either way the app works with no model
   running at all, `resolve("llm")`'s `reason` string explaining what is
   missing directly in the Settings screen and on the Today card.

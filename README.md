@@ -31,7 +31,7 @@ and gives the assistant eight small tools to ask for them.
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
 | Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
 | Agent API | Eight tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
-| Shared models | "Write my day": a cached, regenerable first-person narrative of a day, from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama/llama.cpp/OpenAI-compatible server) |
+| Shared models | "Write my day": a cached, regenerable short narrative of a day ("You spent the morning on..."), from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama/llama.cpp/OpenAI-compatible server); a day with nothing recorded is refused without calling the model |
 | Interface | Today (zoomable timeline, legend, pinned details, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; English/Spanish; light/dark | Desktop layout; not designed for phones |
 
 More screens: [Search](docs/media/search.png) · [Privacy](docs/media/privacy.png) ·
@@ -105,7 +105,7 @@ or sqlite imports. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Tests
 
 ```
-.venv/bin/python -m pytest -q          # 201 passed in about 10 s
+.venv/bin/python -m pytest -q          # 205 passed in about 10 s
 cd frontend && npm ci && npm run build  # 0 TypeScript errors
 ```
 
@@ -122,8 +122,9 @@ hostile input; the browser guard (host and origin ports, `null` origin),
 the SPA path-traversal fix and the exact agent route list; the shared
 model backend (`backend.json` persistence and merging, the token never
 echoed back, resolved/unavailable Settings states, the Re-check swap, and
-"Write my day" caching/regeneration/disabling against a fake Link, never
-a real network call); the Windows probe logic with the Win32 calls faked
+"Write my day" caching/regeneration/disabling and the empty-day and
+empty-answer refusals against a fake Link, plus one pass through the real
+resolver over a mocked HTTP transport -- never a real network call); the Windows probe logic with the Win32 calls faked
 (tick wraparound, access-denied executables); git scanning with UTF-8
 subjects, author filters and hidden consoles; the CLI; the manifest check;
 and an MCP protocol test that spawns `mcp_server.py` over stdio against a
