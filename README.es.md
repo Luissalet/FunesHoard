@@ -9,6 +9,19 @@
 ![Vista del día: la línea de tiempo de ayer ajustada a las horas activas con la ausencia rayada, un tramo fijado y la tarjeta ¿Dónde lo dejé? con los últimos contextos de trabajo](docs/media/today.png)
 *Aplicación real, tres días de datos de demostración sintéticos (`--demo`, sin títulos de ventana reales).*
 
+> **Antes que nada, qué hace esta aplicación con tu actividad:** todo se
+> queda en un único archivo SQLite en este ordenador, nada se envía nunca
+> por red; graba la aplicación en primer plano, el título de la ventana,
+> los archivos abiertos y los commits de git -- nunca pulsaciones de
+> teclado, el contenido de la pantalla ni el portapapeles; una regla puede
+> excluir una aplicación o ventana antes de que se guarde ninguna muestra
+> (los gestores de contraseñas y las ventanas privadas o de incógnito se
+> excluyen por defecto); puedes pausar la grabación (15 min, 1 h o hasta
+> que la reanudes) desde cualquier pantalla; y puedes borrar
+> permanentemente cualquier rango de tiempo, cuando quieras, desde
+> **Privacidad**. El detalle completo está en [Privacidad y
+> límites](#privacidad-y-límites), más abajo.
+
 ## Por qué
 
 Un asistente local no sabe qué había en la pantalla de su usuario. Si le

@@ -9,6 +9,16 @@
 ![Day view: yesterday's timeline zoomed to the active hours with away time hatched, one segment pinned, and the Where was I? card with the last work contexts](docs/media/today.png)
 *Actual application, three days of synthetic demo data (`--demo`, no real window titles).*
 
+> **Before anything else, what this does with your activity:** everything
+> stays in one local SQLite file on this computer, nothing is ever sent
+> over the network; it records foreground app, window title, files opened
+> and git commits -- never keystrokes, screen content or clipboard; a rule
+> can exclude an app or window before a sample is ever written (password
+> managers and private/incognito windows are excluded by default); you can
+> pause recording (15 min / 1 h / until you resume) from any screen; and
+> you can permanently delete any time range, at any time, from **Privacy**.
+> See [Privacy and limits](#privacy-and-limits) below for the full detail.
+
 ## Why
 
 A local assistant has no record of what was on the user's screen. Asked
