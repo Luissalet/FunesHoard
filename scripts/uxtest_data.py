@@ -5,8 +5,8 @@
     python scripts/uxtest_data.py serve --port 18830 [--out data-uxtest]
 
 `generate` builds, under `--out` (gitignored):
-  - `repos/Side projects/`: ~40 git repos like the user's folder
-    -- a handful of active projects with commits over the last two weeks,
+  - `repos/Projects/`: ~40 git repos like the user's folder of independent
+    projects -- a handful of active projects with commits over the last two weeks,
     old experiments, clones of other people's projects (other authors, one
     with thousands of commits), generic names (`docs`, `notes`, `chat`, ...);
   - `app/funes.sqlite3`: two weeks of activity produced by driving the real
@@ -127,7 +127,7 @@ def day_script(rng: random.Random, d: date) -> List[Block]:
     main = ACTIVE[(d.toordinal()) % 4]
     other = ACTIVE[(d.toordinal() + 1) % 6]
     if wd >= 5:  # weekend: novel, photos, fan films, a little coding
-        blocks = [Block(40, "explorer.exe", "Fotos 2026 - Explorador de archivos"),
+        blocks = [Block(40, "explorer.exe", "Photos 2026 - Explorador de archivos"),
                   Block(35, "Microsoft.Photos.exe", "IMG_20260912_1843.jpg - Fotos"),
                   *[Block(rng.randint(15, 40), *rng.choice(NOVEL)) for _ in range(4)],
                   Block(70, "unknown", "", away=True),
@@ -251,7 +251,7 @@ def generate(out: Path, seed: int = 38) -> None:
         raise SystemExit(f"{out}/app already exists; remove it first")
     today = date.today()
     days = [today - timedelta(days=k) for k in range(13, -1, -1)]
-    repos_root = out / "repos" / "Side projects"
+    repos_root = out / "repos" / "Projects"
     t0 = time.perf_counter()
     if not repos_root.exists():
         make_repos(repos_root, days, rng)
@@ -285,11 +285,11 @@ def generate(out: Path, seed: int = 38) -> None:
                 continue
             proj = rng.choice(ACTIVE)
             path = rng.choice([
-                f"C:/Users/me/Desktop/Side projects/{proj}/{rng.choice(FILES[proj])}",
+                f"C:/Users/me/Desktop/Projects/{proj}/{rng.choice(FILES[proj])}",
                 "C:/Users/me/Documents/Novela/El mapa perdido - Capítulo 8.docx",
-                "C:/Users/me/Documents/Empleo/CV 2026 - EN.docx",
-                f"C:/Users/me/Pictures/Fotos 2026/IMG_202609{d.day:02d}_{rng.randint(1000, 2359)}.jpg",
-                "C:/Users/me/Downloads/gastos_2026.csv",
+                "C:/Users/me/Documents/Job search/CV 2026 - EN.docx",
+                f"C:/Users/me/Pictures/Photos 2026/IMG_202609{d.day:02d}_{rng.randint(1000, 2359)}.jpg",
+                "C:/Users/me/Downloads/expenses_2026.csv",
             ])
             rid = db.execute("INSERT INTO file_events(ts, path, app_hint) VALUES (?, ?, ?)",
                              (ts, path, Path(path).suffix.lstrip(".")))

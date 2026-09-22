@@ -10,7 +10,7 @@ browser and as an agent over MCP, in [USABILITY_REPORT.md](USABILITY_REPORT.md);
 
 The persona is always the same person, the user: a senior engineer on
 Windows who builds local AI tools (Faustus and its plugin apps) in a folder
-called `Side projects`, writes a novel in Word and Obsidian,
+of dozens of independent repos, writes a novel in Word and Obsidian,
 keeps his photos on disk, is looking for a new job, and watches fan
 productions in the evening.
 
@@ -107,7 +107,7 @@ productions in the evening.
 ## UC6 - First real setup on Windows: dozens of repos
 
 - **Who:** the user on his own PC, pointing the commits source at
-  `C:\Users\me\Desktop\Side projects`, which holds dozens of
+  `C:\Users\me\Desktop\Projects`, which holds dozens of
   repos: his active apps, old experiments, and many clones of other people's
   projects he never works on.
 - **Goal:** commits from his active projects show up quickly; the Projects
