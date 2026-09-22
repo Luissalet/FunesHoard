@@ -208,7 +208,7 @@ def test_meetings_and_media_get_a_much_longer_away_threshold(tmp_path):
     db = Database(tmp_path / "data")
     probe = make_probe([
         ("Teams.exe", "Weekly sync", 0, False),
-        ("Teams.exe", "Weekly sync", 20 * 60, False),  # 20 min idle: below the 30 min meetings threshold
+        ("Teams.exe", "Weekly sync", 20 * 60, False),  # 20 min idle: below the 60 min meetings threshold
     ])
     c = Collector(db, probe, interval_s=1)
     c.tick(now=T0)
@@ -245,3 +245,35 @@ def test_pause_at_least_never_shortens_or_ends_an_existing_pause(tmp_path):
     until, extended = c.pause_at_least(5, now=T0)
     assert until is None and not extended
     assert c.is_paused(T0 + 10 * 86400)
+
+
+def _feed(c, app, title, start, minutes, step=60, idle_from=None):
+    """Tick `minutes` of one window with no input from `idle_from` (default: the start)."""
+    base = start if idle_from is None else idle_from
+    for k in range(int(minutes * 60 / step) + 1):
+        ts = start + k * step
+        c.probe = FakeProbe([Sample(ts=ts, app=app, exe="", title=title, pid=1, idle_s=max(0.0, ts - base), locked=False)])
+        c.tick(now=ts)
+
+
+def test_a_45_minute_call_with_no_input_is_all_meeting(tmp_path):
+    # Re-walk of UC3: the Thursday interview (Zoom.exe, 45 min, hands off the
+    # keyboard) was recorded as 45 min away under the 30-min threshold.
+    db = Database(tmp_path / "data")
+    c = Collector(db, make_probe([("x", "y", 0, False)]), interval_s=1)
+    _feed(c, "Zoom.exe", "Entrevista técnica - Zoom Meeting", T0, 45)
+    _feed(c, "Code.exe", "a.py - Foo - Visual Studio Code", T0 + 45 * 60 + 5, 1)
+    rows = db.query("SELECT kind, category, start_ts, end_ts FROM spans WHERE app = 'Zoom.exe'")
+    assert [(r["kind"], r["category"]) for r in rows] == [("active", "Meetings")]
+    assert rows[0]["end_ts"] - rows[0]["start_ts"] >= 45 * 60
+
+
+def test_a_film_left_running_past_the_threshold_keeps_the_first_hour(tmp_path):
+    db = Database(tmp_path / "data")
+    c = Collector(db, make_probe([("x", "y", 0, False)]), interval_s=1)
+    _feed(c, "chrome.exe", "Fan film: The Last Signal (Full Movie) - YouTube - Google Chrome", T0, 80)
+    c.stop()
+    rows = db.query("SELECT kind, category, start_ts, end_ts FROM spans ORDER BY start_ts")
+    assert [(r["kind"], r["category"]) for r in rows] == [("active", "Media"), ("away", "Other")]
+    assert rows[0]["end_ts"] - rows[0]["start_ts"] == 3600
+    assert rows[1]["start_ts"] == T0 + 3600

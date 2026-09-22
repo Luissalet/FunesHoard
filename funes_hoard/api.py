@@ -652,7 +652,7 @@ def create_app(
         # A3: how long a Meetings/Media span may sit idle before it counts
         # as away -- much longer than the ordinary threshold, since a call
         # or a video with no keyboard/mouse input is not idleness.
-        seconds = float(db.get_meta("away_after_meetings_s", "1800") or 1800)
+        seconds = float(db.get_meta("away_after_meetings_s", "3600") or 3600)
         return {"minutes": seconds / 60.0}
 
     @app.put("/api/settings/meetings-away")

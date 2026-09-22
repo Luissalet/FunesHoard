@@ -184,3 +184,25 @@ def test_away_after_a_pause_starts_no_earlier_than_the_pause() -> None:
     assert closed == []
     assert b.peek_open().kind == "away"
     assert b.peek_open().start_ts == 1600.0
+
+
+def test_passive_away_starts_when_the_threshold_is_crossed_not_at_last_input():
+    # A3 re-walk: a 45-min Zoom interview with no input under a 30-min
+    # threshold became one 45-min away span, because the away span was
+    # back-dated to the last input -- the very start of the call. For a
+    # passive category only the part past the threshold is away.
+    b = SpanBuilder(away_after_s=120, sleep_gap_s=9999)
+    b.add_sample(s(0, app="Zoom.exe", title="Interview", idle_s=0))
+    assert b.add_sample(s(3000, app="Zoom.exe", title="Interview", idle_s=3000), away_after_s=3600, passive=True) == []
+    closed = b.add_sample(s(3700, app="Zoom.exe", title="Interview", idle_s=3700), away_after_s=3600, passive=True)
+    assert [(c.kind, c.start_ts, c.end_ts) for c in closed] == [("active", 0, 3600)]
+    assert (b.peek_open().kind, b.peek_open().start_ts) == ("away", 3600)
+
+
+def test_non_passive_away_is_still_back_dated_to_the_last_input():
+    b = SpanBuilder(away_after_s=120, sleep_gap_s=9999)
+    b.add_sample(s(0, idle_s=0))
+    b.add_sample(s(100, idle_s=0))
+    closed = b.add_sample(s(400, idle_s=300))
+    assert [(c.kind, c.start_ts, c.end_ts) for c in closed] == [("active", 0, 100)]
+    assert b.peek_open().start_ts == 100

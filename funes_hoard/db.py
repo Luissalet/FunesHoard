@@ -119,8 +119,9 @@ DEFAULT_META = {
     "away_after_s": "120",
     # A3: a meeting or a video with no keyboard/mouse input still counts as
     # active for much longer than an idle desk -- a 45-minute interview with
-    # no input should not show as 0 minutes in Meetings.
-    "away_after_meetings_s": "1800",
+    # no input should not show as 0 minutes in Meetings. An hour covers an
+    # interview or an episode; past it, only the rest becomes away.
+    "away_after_meetings_s": "3600",
     "retention_days": "180",
     "paused_until": "",
     "sample_interval_s": "1",
@@ -239,15 +240,25 @@ class Database:
         if current_version >= CLASSIFY_DEFAULTS_VERSION:
             return
         existing = [dict(r) for r in conn.execute("SELECT match_type, pattern FROM classify_rules").fetchall()]
-        additions = migrate_default_rules(existing)
-        if additions:
-            max_order = conn.execute("SELECT COALESCE(MAX(order_idx), -1) m FROM classify_rules").fetchone()["m"]
-            for i, (match_type, pattern, category, project) in enumerate(additions, start=1):
-                conn.execute(
-                    "INSERT INTO classify_rules(order_idx, match_type, pattern, category, project, enabled)"
-                    " VALUES (?, ?, ?, ?, ?, 1)",
-                    (max_order + i, match_type, pattern, category, project),
-                )
+        for match_type, pattern, category, project, before in migrate_default_rules(existing):
+            anchor = None
+            if before is not None:
+                anchor = conn.execute(
+                    "SELECT MIN(order_idx) m FROM classify_rules WHERE match_type = 'app' AND lower(pattern) = lower(?)",
+                    (before,),
+                ).fetchone()["m"]
+            if anchor is None:
+                order_idx = conn.execute("SELECT COALESCE(MAX(order_idx), -1) + 1 m FROM classify_rules").fetchone()["m"]
+            else:
+                # Make room right before the anchor; everything after keeps
+                # its relative order.
+                conn.execute("UPDATE classify_rules SET order_idx = order_idx + 1 WHERE order_idx >= ?", (anchor,))
+                order_idx = anchor
+            conn.execute(
+                "INSERT INTO classify_rules(order_idx, match_type, pattern, category, project, enabled)"
+                " VALUES (?, ?, ?, ?, ?, 1)",
+                (order_idx, match_type, pattern, category, project),
+            )
         conn.execute(
             "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, str(CLASSIFY_DEFAULTS_VERSION)),

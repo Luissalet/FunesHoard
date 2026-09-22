@@ -27,6 +27,14 @@ class ClassifyRule:
     enabled: bool = True
 
 
+# Browser tab titles end in " - <site>" (" | <site>" for some): matching the
+# separator keeps a file called youtube.py in an editor title out of it.
+STREAMING_TITLE_RE = (
+    r"(?i)\s[-|–]\s(YouTube|Netflix|Twitch|Prime Video|Disney\+|Crunchyroll|Filmin|Vimeo)\b"
+    r"|^(Netflix|Prime Video|Disney\+)\b"
+)
+
+
 def default_rules() -> List[ClassifyRule]:
     rows = [
         ("app", "Code.exe", "Coding", None),
@@ -53,6 +61,9 @@ def default_rules() -> List[ClassifyRule]:
         ("app", "vlc.exe", "Media", None),
         ("app", "steam.exe", "Games", None),
         ("app", "steamwebhelper.exe", "Games", None),
+        # Before the browsers (first match wins): a film or a stream in a
+        # browser tab is Media, which also gives it the long away threshold.
+        ("title_regex", STREAMING_TITLE_RE, "Media", None),
         ("app", "chrome.exe", "Browsing", None),
         ("app", "msedge.exe", "Browsing", None),
         ("app", "brave.exe", "Browsing", None),
@@ -74,19 +85,23 @@ def default_rules() -> List[ClassifyRule]:
 # (seeded only once, when its classify_rules table was empty) should also
 # pick up. `db.py._migrate_classify_defaults` applies `migrate_default_rules`
 # below without disturbing anything the user added or reordered themselves.
-CLASSIFY_DEFAULTS_VERSION = 2
+CLASSIFY_DEFAULTS_VERSION = 3
 
-_DEFAULT_RULES_ADDED_SINCE_V1: List[Tuple[str, str, str, Optional[str]]] = [
-    ("app", "Faustus.exe", "Coding", None),
-    ("app", "Microsoft.Photos.exe", "Media", None),
+# (match_type, pattern, category, project, before): `before` is the app
+# pattern of an existing rule the new one must precede (rules are
+# first-match), or None to append at the end.
+_DEFAULT_RULES_ADDED_SINCE_V1: List[Tuple[str, str, str, Optional[str], Optional[str]]] = [
+    ("app", "Faustus.exe", "Coding", None, None),
+    ("app", "Microsoft.Photos.exe", "Media", None, None),
+    ("title_regex", STREAMING_TITLE_RE, "Media", None, "chrome.exe"),
 ]
 
 
-def migrate_default_rules(existing: List[dict]) -> List[Tuple[str, str, str, Optional[str]]]:
-    """New default rules (match_type, pattern, category, project) to add to
-    an existing database. Only added when nothing already matches that
-    (match_type, pattern) -- a rule the user added or re-mapped for the
-    same app is left exactly as they made it."""
+def migrate_default_rules(existing: List[dict]) -> List[Tuple[str, str, str, Optional[str], Optional[str]]]:
+    """New default rules (match_type, pattern, category, project, before) to
+    add to an existing database. Only added when nothing already matches
+    that (match_type, pattern) -- a rule the user added or re-mapped for
+    the same app is left exactly as they made it."""
     existing_keys = {(r["match_type"], r["pattern"]) for r in existing}
     return [r for r in _DEFAULT_RULES_ADDED_SINCE_V1 if (r[0], r[1]) not in existing_keys]
 

@@ -27,6 +27,23 @@ def test_migrate_default_rules_adds_only_whats_missing():
     assert "Microsoft.Photos.exe" in patterns
 
 
+def test_a_video_in_a_browser_tab_is_media_not_browsing():
+    # Re-walk of A3: the fan films were watched in Chrome, so they were
+    # Browsing and got the ordinary 2-minute away threshold.
+    for title in (
+        "Fan film: The Last Signal (Full Movie) - YouTube - Google Chrome",
+        "Weekend Marathon | Netflix - Google Chrome",
+        "Speedrun - Twitch — Mozilla Firefox",
+    ):
+        assert classify("chrome.exe", "", title, default_rules())[0] == "Media", title
+    assert classify("chrome.exe", "", "SQLite FTS5 Extension - Google Chrome", default_rules())[0] == "Browsing"
+
+
+def test_an_editor_file_named_after_a_site_is_not_media():
+    cat, proj = classify("Code.exe", "", "youtube.py - scraper - Visual Studio Code", default_rules())
+    assert (cat, proj) == ("Coding", "scraper")
+
+
 def test_default_rules_classify_vscode_as_coding():
     cat, proj = classify("Code.exe", "C:/x/Code.exe", "main.py - Faustus - Visual Studio Code", default_rules())
     assert cat == "Coding"

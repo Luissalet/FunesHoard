@@ -35,7 +35,9 @@ def test_reopening_an_old_database_migrates_its_default_classify_rules(tmp_path)
     patterns = {r["pattern"] for r in reopened.query("SELECT pattern FROM classify_rules")}
     assert "Faustus.exe" in patterns
     assert "Microsoft.Photos.exe" in patterns
-    assert reopened.get_meta("classify_defaults_version", "1") == "2"
+    from funes_hoard.core.classify import CLASSIFY_DEFAULTS_VERSION
+
+    assert reopened.get_meta("classify_defaults_version", "1") == str(CLASSIFY_DEFAULTS_VERSION)
 
 
 def test_classify_migration_never_touches_a_users_own_rule_for_the_same_app(tmp_path):
@@ -68,3 +70,23 @@ def test_migration_never_touches_a_users_own_custom_rule(tmp_path):
     reopened = Database(data_dir)
     patterns = {r["pattern"] for r in reopened.query("SELECT pattern FROM privacy_rules")}
     assert "MyCustomApp" in patterns
+
+
+def test_classify_migration_puts_the_streaming_rule_before_the_browsers(tmp_path):
+    # Rules are first-match: appended after chrome.exe, a "- YouTube" title
+    # rule would never fire, and the fan films would stay Browsing (with the
+    # 2-minute away threshold) on every existing database.
+    from funes_hoard.core.classify import STREAMING_TITLE_RE
+
+    data_dir = tmp_path / "data"
+    db = Database(data_dir)
+    db.execute("DELETE FROM classify_rules WHERE pattern = ?", (STREAMING_TITLE_RE,))
+    db.execute("UPDATE meta SET value = '2' WHERE key = 'classify_defaults_version'")
+    db.close()
+
+    reopened = Database(data_dir)
+    order = [r["pattern"] for r in reopened.query("SELECT pattern FROM classify_rules ORDER BY order_idx")]
+    assert order.count(STREAMING_TITLE_RE) == 1
+    assert order.index(STREAMING_TITLE_RE) == order.index("chrome.exe") - 1
+    idx = [r["order_idx"] for r in reopened.query("SELECT order_idx FROM classify_rules")]
+    assert len(idx) == len(set(idx))  # no two rules share a position

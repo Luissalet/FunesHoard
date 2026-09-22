@@ -22,6 +22,9 @@ from funes_hoard.git_watch import PROJECT_RECENCY_DAYS
 logger = logging.getLogger("funes_hoard.collector")
 
 FLUSH_INTERVAL_S = 30.0
+# A3: categories where no keyboard/mouse input is normal (a call, a film).
+PASSIVE_CATEGORIES = ("Meetings", "Media")
+DEFAULT_MEETINGS_AWAY_S = "3600"
 
 
 def _load_classify_rules(db: Database) -> List[ClassifyRule]:
@@ -176,21 +179,24 @@ class Collector:
         """Pause until a human explicitly resumes it (no auto-expiry)."""
         self.db.set_meta("paused_until", "inf")
 
-    def _away_after_s_for(self, sample: Sample) -> float:
+    def _away_after_s_for(self, sample: Sample) -> tuple[float, bool]:
         """A3: a meeting or a video with no keyboard/mouse input is not
         idleness -- it gets a much longer away threshold, configurable
         separately from the ordinary one. Classification is already
         computed for every span at persist time; this is the same lookup,
-        just run early enough to decide whether the sample counts as away."""
+        just run early enough to decide whether the sample counts as away.
+
+        Returns (threshold, passive): `passive` tells the span builder not
+        to back-date the away span past the threshold (see `add_sample`)."""
         base = float(self.db.get_meta("away_after_s", "120"))
         if sample.locked or not sample.app:
-            return base
+            return base, False
         rules = _load_classify_rules(self.db)
         repos = _known_repo_names(self.db)
         category, _ = classify(sample.app, sample.exe, sample.title, rules, repos)
-        if category in ("Meetings", "Media"):
-            return float(self.db.get_meta("away_after_meetings_s", "1800"))
-        return base
+        if category in PASSIVE_CATEGORIES:
+            return float(self.db.get_meta("away_after_meetings_s", DEFAULT_MEETINGS_AWAY_S)), True
+        return base, False
 
     def tick(self, now: Optional[float] = None) -> None:
         with self._lock:
@@ -208,8 +214,8 @@ class Collector:
             if cleaned is None:
                 self._interrupt(sample.ts)
                 return
-            away_after_s = self._away_after_s_for(cleaned)
-            closed = self.builder.add_sample(cleaned, away_after_s=away_after_s)
+            away_after_s, passive = self._away_after_s_for(cleaned)
+            closed = self.builder.add_sample(cleaned, away_after_s=away_after_s, passive=passive)
             for span in closed:
                 self._persist_close(span)
             self._maybe_flush_open(sample.ts)

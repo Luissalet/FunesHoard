@@ -273,7 +273,7 @@ def test_demo_flag_seeds_an_empty_data_dir(tmp_path):
 
 # --- A3: the Meetings/Media away threshold is configurable -----------------
 def test_meetings_away_setting_round_trip(client):
-    assert client.get("/api/settings/meetings-away").json()["minutes"] == 30
+    assert client.get("/api/settings/meetings-away").json()["minutes"] == 60
     r = client.put("/api/settings/meetings-away", json={"minutes": 45})
     assert r.json()["minutes"] == 45
     assert client.get("/api/settings/meetings-away").json()["minutes"] == 45

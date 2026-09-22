@@ -80,11 +80,17 @@ class SpanBuilder:
     def current(self) -> Optional[Span]:
         return self._current
 
-    def add_sample(self, s: Sample, away_after_s: Optional[float] = None) -> List[Span]:
+    def add_sample(self, s: Sample, away_after_s: Optional[float] = None, passive: bool = False) -> List[Span]:
         """`away_after_s` overrides `self.away_after_s` for this one sample
         (A3: the caller passes a longer threshold while the foreground app
         is a meeting or a video, since no input for a while there is normal,
-        not idleness)."""
+        not idleness).
+
+        `passive=True` (same case) changes where such an away span starts:
+        not back at the last input, which would erase the whole meeting or
+        film the threshold exists to keep, but at the moment the threshold
+        was crossed -- the first `away_after_s` of a call with no typing
+        were plausibly spent in the call; only what comes after is away."""
         closed: List[Span] = []
         threshold = self.away_after_s if away_after_s is None else away_after_s
 
@@ -105,7 +111,8 @@ class SpanBuilder:
                 # Nothing recorded yet and no floor set: this sample is the
                 # earliest thing we know about, so it cannot predate itself.
                 lower_bound = s.ts
-            start = max(s.ts - max(0.0, s.idle_s), lower_bound)
+            last_input = s.ts - max(0.0, s.idle_s)
+            start = max(last_input + (threshold if passive else 0.0), lower_bound)
             start = min(start, s.ts)
             if self._current is not None:
                 self._current.end_ts = start
