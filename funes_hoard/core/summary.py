@@ -5,7 +5,7 @@ unit-tested with hand-built fixtures instead of a database.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
 FOCUS_MIN_S = 25 * 60
@@ -83,10 +83,28 @@ def count_context_switches(spans: List[SpanRow]) -> int:
     return switches
 
 
+def clip_spans(spans: List[SpanRow], start_ts: float, end_ts: float) -> List[SpanRow]:
+    """Copies of `spans` cut to [start_ts, end_ts); spans outside are dropped.
+
+    A span that crosses midnight (or the edge of any requested window) must
+    only count the part inside the window, or day totals double-count it.
+    """
+    out: List[SpanRow] = []
+    for s in spans:
+        a, b = max(s.start_ts, start_ts), min(s.end_ts, end_ts)
+        if b > a or (b == a and s.start_ts == s.end_ts and start_ts <= a < end_ts):
+            out.append(replace(s, start_ts=a, end_ts=b))
+    return out
+
+
 def focus_blocks(spans: List[SpanRow]) -> List[FocusBlock]:
-    """Blocks of >= 25 min in one project (or category, if no project) with
-    interruptions of at most 2 min (away spans, or a different key) between
-    consecutive matching active spans."""
+    """Blocks of >= 25 min in one project (or category, if no project).
+
+    Interruptions are allowed as long as each one -- the whole stretch of
+    time away from the block's key, whatever it was spent on (away, locked,
+    another app or project, or no samples at all) -- lasts at most 2 min.
+    The block's duration counts only the time actually spent on its key.
+    """
     ordered = sorted(spans, key=lambda s: s.start_ts)
     blocks: List[FocusBlock] = []
 
@@ -106,27 +124,22 @@ def focus_blocks(spans: List[SpanRow]) -> List[FocusBlock]:
         block_start = s.start_ts
         block_end = s.end_ts
         active_duration = s.duration_s
+        last_match = i
         j = i + 1
         while j < n:
             nxt = ordered[j]
-            gap = nxt.start_ts - block_end
-            if gap > FOCUS_MAX_GAP_S:
-                break
-            nxt_key = key_of(nxt)
-            if nxt_key is None:
-                # away/locked interruption within budget: skip over it
-                if nxt.duration_s > FOCUS_MAX_GAP_S:
+            if key_of(nxt) == key:
+                if nxt.start_ts - block_end > FOCUS_MAX_GAP_S:
                     break
-                j += 1
-                continue
-            if nxt_key != key:
-                break
-            block_end = nxt.end_ts
-            active_duration += nxt.duration_s
+                block_end = max(block_end, nxt.end_ts)
+                active_duration += nxt.duration_s
+                last_match = j
+            elif nxt.end_ts - block_end > FOCUS_MAX_GAP_S:
+                break  # this interruption (so far) is longer than the budget
             j += 1
         if active_duration >= FOCUS_MIN_S:
             blocks.append(FocusBlock(start_ts=block_start, end_ts=block_end, key=key, duration_s=active_duration))
-            i = j
+            i = last_match + 1
         else:
             i += 1
     return blocks
@@ -134,20 +147,29 @@ def focus_blocks(spans: List[SpanRow]) -> List[FocusBlock]:
 
 @dataclass
 class Context:
-    key: str  # project or category+app
+    key: str  # project, or app when no project is known
     app: str
     project: Optional[str]
     start_ts: float
     end_ts: float
     duration_s: float
+    title: str = ""  # the last window title seen in this context
 
 
 def where_was_i(spans: List[SpanRow], before: float, contexts: int = 5) -> List[Context]:
-    """Last N distinct work contexts before `before`, skipping away/locked,
-    merging consecutive active spans that share a project (or app when no
-    project is set)."""
+    """Last N *distinct* work contexts before `before`, most recent first.
+
+    Skips away/locked time and alt-tab blips (< 10 s), merges consecutive
+    active spans that share a project (or app when no project is set), and
+    keeps only the most recent occurrence of each context so that bouncing
+    between two windows does not fill every slot with the same two entries.
+    """
     active = sorted(
-        (s for s in spans if s.kind == "active" and s.start_ts < before),
+        (
+            replace(s, end_ts=min(s.end_ts, before))
+            for s in spans
+            if s.kind == "active" and s.start_ts < before and s.duration_s >= SWITCH_MIN_DWELL_S
+        ),
         key=lambda s: s.start_ts,
     )
     merged: List[Context] = []
@@ -156,7 +178,17 @@ def where_was_i(spans: List[SpanRow], before: float, contexts: int = 5) -> List[
         if merged and merged[-1].key == key and (s.start_ts - merged[-1].end_ts) <= FOCUS_MAX_GAP_S:
             merged[-1].end_ts = s.end_ts
             merged[-1].duration_s += s.duration_s
+            merged[-1].title = s.title
         else:
-            merged.append(Context(key=key, app=s.app, project=s.project, start_ts=s.start_ts, end_ts=s.end_ts, duration_s=s.duration_s))
-    merged.sort(key=lambda c: c.start_ts, reverse=True)
-    return merged[:contexts]
+            merged.append(Context(key=key, app=s.app, project=s.project, start_ts=s.start_ts,
+                                  end_ts=s.end_ts, duration_s=s.duration_s, title=s.title))
+    seen: set = set()
+    out: List[Context] = []
+    for c in reversed(merged):
+        if c.key in seen:
+            continue
+        seen.add(c.key)
+        out.append(c)
+        if len(out) >= contexts:
+            break
+    return out

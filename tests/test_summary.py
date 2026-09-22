@@ -104,3 +104,76 @@ def test_where_was_i_skips_away_and_respects_before():
     ctxs = where_was_i(spans, before=T0 + 900, contexts=5)
     assert len(ctxs) == 1
     assert ctxs[0].project == "Atlas"
+
+
+# --- review regressions ----------------------------------------------------
+def test_focus_block_survives_a_short_glance_at_another_app():
+    # 20 s on chat in the middle of an hour of Atlas is an interruption,
+    # not the end of the focus block (spec: interruptions <= 2 min each).
+    spans = [
+        span(1, 0, 20 * 60, project="Atlas"),
+        span(2, 20 * 60, 20 * 60 + 20, app="Discord.exe", project=None, category="Communication"),
+        span(3, 20 * 60 + 20, 40 * 60, project="Atlas"),
+    ]
+    blocks = focus_blocks(spans)
+    assert len(blocks) == 1
+    assert blocks[0].key == "Atlas"
+    assert blocks[0].start_ts == T0 and blocks[0].end_ts == T0 + 40 * 60
+
+
+def test_focus_block_interruption_budget_is_the_whole_gap_not_each_span():
+    # Three 50 s side trips back to back = 150 s away from Atlas: too long.
+    spans = [
+        span(1, 0, 20 * 60, project="Atlas"),
+        span(2, 1200, 1250, app="a.exe", project=None, category="Browsing"),
+        span(3, 1250, 1300, app="b.exe", project=None, category="Communication"),
+        span(4, 1300, 1350, app="c.exe", project=None, category="Media"),
+        span(5, 1350, 1350 + 20 * 60, project="Atlas"),
+    ]
+    assert focus_blocks(spans) == []
+
+
+def test_focus_block_does_not_end_on_a_trailing_interruption():
+    spans = [
+        span(1, 0, 30 * 60, project="Atlas"),
+        span(2, 30 * 60, 30 * 60 + 30, app="Discord.exe", project=None, category="Communication"),
+    ]
+    blocks = focus_blocks(spans)
+    assert blocks[0].end_ts == T0 + 30 * 60
+
+
+def test_where_was_i_returns_distinct_contexts_with_last_title():
+    spans = [
+        span(1, 0, 600, project="Atlas", title="api.py - Atlas - Visual Studio Code"),
+        span(2, 600, 900, app="chrome.exe", project=None, category="Browsing", title="Docs"),
+        span(3, 900, 1500, project="Atlas", title="db.py - Atlas - Visual Studio Code"),
+    ]
+    ctxs = where_was_i(spans, before=T0 + 2000, contexts=5)
+    assert [c.key for c in ctxs] == ["Atlas", "chrome.exe"]
+    assert ctxs[0].title == "db.py - Atlas - Visual Studio Code"
+
+
+def test_where_was_i_ignores_alt_tab_blips():
+    spans = [
+        span(1, 0, 600, project="Atlas"),
+        span(2, 600, 603, app="explorer.exe", project=None, category="System"),
+        span(3, 603, 900, project="Lumen"),
+    ]
+    ctxs = where_was_i(spans, before=T0 + 1000, contexts=5)
+    assert [c.key for c in ctxs] == ["Lumen", "Atlas"]
+
+
+def test_where_was_i_clips_a_span_that_runs_past_before():
+    spans = [span(1, 0, 3600, project="Atlas")]
+    ctxs = where_was_i(spans, before=T0 + 600, contexts=5)
+    assert ctxs[0].end_ts == T0 + 600
+    assert ctxs[0].duration_s == 600
+
+
+def test_clip_spans_to_window():
+    from funes_hoard.core.summary import clip_spans
+
+    spans = [span(1, -3600, 1800), span(2, 1800, 7200), span(3, 9000, 9600)]
+    clipped = clip_spans(spans, T0, T0 + 3600)
+    assert [(s.start_ts - T0, s.end_ts - T0) for s in clipped] == [(0, 1800), (1800, 3600)]
+    assert spans[0].start_ts == T0 - 3600  # inputs untouched
