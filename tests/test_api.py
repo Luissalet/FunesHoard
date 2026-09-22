@@ -124,7 +124,8 @@ def test_classify_preview_does_not_persist(client):
 
 
 def test_delete_range_two_step_is_the_only_way_to_wipe(client):
-    span = client.get("/api/timeline").json()["items"][0]
+    # The demo days end at "now", so today can still be empty just after midnight.
+    span = client.get("/api/timeline", params={"start": "-3d"}).json()["items"][0]
     r = client.post("/api/privacy/delete-range", json={"start": span["start"] - 1, "end": span["end"] + 1})
     assert r.status_code == 200
     assert r.json()["deleted"]["spans"] >= 1
