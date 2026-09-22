@@ -137,6 +137,91 @@ def test_a_clone_by_another_author_never_becomes_a_project(tmp_path):
     assert detect_project("Senior Python Engineer (Remote, EU) | LinkedIn", names) is None
 
 
+def test_second_poll_of_an_unchanged_repo_runs_no_git_log(tmp_path, monkeypatch):
+    root = tmp_path / "projects"
+    repo = root / "atlas"
+    _init_repo(repo, "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    poller = GitCommitsPoller(db, author_filters=["luissalet"])
+    assert poller.poll_once() == 1
+
+    import funes_hoard.git_watch as gw
+
+    def _must_not_run(*a, **k):
+        raise AssertionError("git log must not run for a repo whose refs have not changed")
+
+    monkeypatch.setattr(gw, "scan_repo", _must_not_run)
+    assert poller.poll_once() == 0
+
+
+def test_a_repo_that_times_out_is_retried_next_poll_not_skipped(tmp_path, monkeypatch):
+    root = tmp_path / "projects"
+    repo = root / "atlas"
+    _init_repo(repo, "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    poller = GitCommitsPoller(db, author_filters=["luissalet"])
+
+    import funes_hoard.git_watch as gw
+
+    real_scan_repo = gw.scan_repo
+    monkeypatch.setattr(gw, "scan_repo", lambda *a, **k: None)  # simulate a timeout
+    assert poller.poll_once() == 0
+    assert db.query("SELECT * FROM commits") == []
+
+    monkeypatch.setattr(gw, "scan_repo", real_scan_repo)
+    assert poller.poll_once() == 1  # retried, not silently skipped forever
+
+
+def test_first_scan_does_not_ask_for_full_history_past_retention(tmp_path, monkeypatch):
+    root = tmp_path / "projects"
+    repo = root / "atlas"
+    _init_repo(repo, "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+    db.set_meta("retention_days", "30")
+    poller = GitCommitsPoller(db, author_filters=["luissalet"])
+
+    import funes_hoard.git_watch as gw
+
+    real_scan_repo = gw.scan_repo
+    captured = {}
+
+    def spy(repo_dir, since_ts, filters, **kw):
+        captured["since_ts"] = since_ts
+        return real_scan_repo(repo_dir, since_ts, filters, **kw)
+
+    monkeypatch.setattr(gw, "scan_repo", spy)
+    poller.poll_once()
+    assert captured["since_ts"] >= time.time() - 31 * 86400
+    assert captured["since_ts"] < time.time() - 29 * 86400
+
+
+def test_commits_from_one_repo_share_a_single_transaction(tmp_path):
+    root = tmp_path / "projects"
+    repo = root / "atlas"
+    _init_repo(repo, "Luissalet", "luissalet@users.noreply.github.com", "feat: one")
+    for subject in ("feat: two", "feat: three", "feat: four"):
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", subject], cwd=str(repo), check=True, capture_output=True)
+    db = Database(tmp_path / "data")
+    db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
+
+    statements = []
+    db.connect().set_trace_callback(lambda sql: statements.append(sql))
+    try:
+        n = GitCommitsPoller(db, author_filters=["luissalet"]).poll_once()
+    finally:
+        db.connect().set_trace_callback(None)
+    assert n == 4
+    commit_count = sum(1 for s in statements if s.strip().upper() == "COMMIT")
+    # A fixed number of commits (one for the repo's whole batch of commit
+    # rows, one for the root's own bookkeeping, one for the known_repos
+    # meta write) -- not one per commit row, which would grow with `n`.
+    assert commit_count < n
+    assert commit_count == 3
+
+
 def test_an_old_abandoned_repo_ages_out_of_being_a_project(tmp_path):
     root = tmp_path / "projects"
     _init_repo(root / "notes", "Luissalet", "luissalet@users.noreply.github.com", "feat: ancient")

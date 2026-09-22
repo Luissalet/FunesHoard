@@ -94,7 +94,11 @@ def scan_repo(
     since_ts: float,
     author_filters: List[str],
     run=subprocess.run,
-) -> List[CommitEvent]:
+) -> Optional[List[CommitEvent]]:
+    """`None` means the scan itself failed (timed out, git errored) and
+    should be retried later; `[]` means it ran fine and found nothing new
+    -- the poller must tell these apart to know whether it is safe to move
+    this repo's checkpoint forward (A1)."""
     since_arg = f"--since=@{int(since_ts)}" if since_ts else "--since=1970-01-01"
     try:
         out = run(
@@ -102,8 +106,10 @@ def scan_repo(
             cwd=str(repo_path), **_subprocess_kwargs(),
         )
     except Exception:
-        return []
-    if out.returncode != 0 or not out.stdout:
+        return None
+    if out.returncode != 0:
+        return None
+    if not out.stdout:
         return []
     events: List[CommitEvent] = []
     repo_name = Path(repo_path).name
@@ -128,36 +134,95 @@ def scan_repo(
     return events
 
 
+def _refs_mtime(repo_dir: Path) -> float:
+    """A cheap fingerprint of "has anything changed in this repo's refs":
+    the newest mtime among HEAD, packed-refs, logs/HEAD and every file
+    under refs/. Pure filesystem stat calls, no subprocess -- comparing it
+    to the value from the last scan is what lets a poll skip a repo
+    entirely (A1) instead of always spending 3 `git` processes on it."""
+    git_dir = repo_dir / ".git"
+    mtimes = []
+    for p in (git_dir / "HEAD", git_dir / "packed-refs", git_dir / "logs" / "HEAD"):
+        try:
+            mtimes.append(p.stat().st_mtime)
+        except OSError:
+            pass
+    try:
+        for p in (git_dir / "refs").rglob("*"):
+            try:
+                if p.is_file():
+                    mtimes.append(p.stat().st_mtime)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return max(mtimes) if mtimes else 0.0
+
+
 class GitCommitsPoller:
     def __init__(self, db: Database, author_filters: Optional[List[str]] = None, interval_s: float = 600.0) -> None:
         self.db = db
         self.author_filters = author_filters  # None -> read from settings on every poll
         self.interval_s = interval_s
 
+    def _retention_floor(self) -> float:
+        try:
+            days = int(float(self.db.get_meta("retention_days", "180") or 180))
+        except ValueError:
+            days = 180
+        return time.time() - days * 86400.0
+
     def poll_once(self) -> int:
         repos = self.db.query("SELECT * FROM commit_repos WHERE enabled = 1")
         configured = self.author_filters if self.author_filters is not None else configured_authors(self.db)
+        retention_floor = self._retention_floor()
+        identity_cache: dict = {}
         total = 0
         for r in repos:
             path = Path(r["path"])
-            since = r["last_scan_ts"] or 0.0
-            for repo_dir in find_git_repos(path):
-                filters = configured or repo_identity(repo_dir)
-                events = scan_repo(repo_dir, since, filters)
-                for ev in events:
-                    exists = self.db.query_one(
-                        "SELECT 1 FROM commits WHERE repo = ? AND sha = ?", (ev.repo, ev.sha)
+            found = find_git_repos(path)
+            for repo_dir in found:
+                repo_path = str(repo_dir)
+                current_mtime = _refs_mtime(repo_dir)
+                cached = self.db.query_one("SELECT * FROM git_repo_scan WHERE path = ?", (repo_path,))
+                if cached is not None and cached["refs_mtime"] == current_mtime:
+                    continue  # nothing changed since we last looked: no git process needed
+                # A repo's own checkpoint, never older than the retention
+                # window: a first scan (or one that never completed before)
+                # need not import history retention would delete right away.
+                since = max(cached["last_scan_ts"] if cached is not None else 0.0, retention_floor)
+                if repo_path not in identity_cache:
+                    identity_cache[repo_path] = configured or repo_identity(repo_dir)
+                events = scan_repo(repo_dir, since, identity_cache[repo_path])
+                if events is None:
+                    continue  # timed out or errored: leave the checkpoint alone, retry next poll
+                with self.db.transaction() as conn:
+                    for ev in events:
+                        exists = conn.execute(
+                            "SELECT 1 FROM commits WHERE repo = ? AND sha = ?", (ev.repo, ev.sha)
+                        ).fetchone()
+                        if exists:
+                            continue
+                        cur = conn.execute(
+                            "INSERT OR IGNORE INTO commits(ts, repo, sha, subject, author) VALUES (?, ?, ?, ?, ?)",
+                            (ev.ts, ev.repo, ev.sha, ev.subject, ev.author),
+                        )
+                        if cur.lastrowid and self.db.fts_available:
+                            conn.execute(
+                                "INSERT INTO search_fts(text, source, ref_id, ts) VALUES (?, ?, ?, ?)",
+                                (f"{ev.subject} {ev.repo}", "commit", cur.lastrowid, ev.ts),
+                            )
+                        total += 1
+                    conn.execute(
+                        "INSERT INTO git_repo_scan(path, refs_mtime, last_scan_ts) VALUES (?, ?, ?)"
+                        " ON CONFLICT(path) DO UPDATE SET refs_mtime = excluded.refs_mtime,"
+                        " last_scan_ts = excluded.last_scan_ts",
+                        (repo_path, current_mtime, time.time()),
                     )
-                    if exists:
-                        continue
-                    row_id = self.db.execute(
-                        "INSERT OR IGNORE INTO commits(ts, repo, sha, subject, author) VALUES (?, ?, ?, ?, ?)",
-                        (ev.ts, ev.repo, ev.sha, ev.subject, ev.author),
-                    )
-                    if row_id:
-                        self.db.index_text("commit", row_id, ev.ts, f"{ev.subject} {ev.repo}")
-                    total += 1
-            self.db.execute("UPDATE commit_repos SET last_scan_ts = ? WHERE id = ?", (time.time(), r["id"]))
+            self.db.execute(
+                "UPDATE commit_repos SET last_scan_ts = ?, last_repo_count = ? WHERE id = ?",
+                (time.time(), len(found), r["id"]),
+            )
         # B3: repo names double as project names for classification, but a
         # repo only qualifies while it actually has a recent commit by the
         # configured/own author -- a clone of someone else's project (whose

@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS spans (
@@ -61,7 +62,19 @@ CREATE TABLE IF NOT EXISTS commit_repos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL UNIQUE,
     enabled INTEGER NOT NULL DEFAULT 1,
-    last_scan_ts REAL
+    last_scan_ts REAL,
+    last_repo_count INTEGER
+);
+
+-- A1: per-repo scan bookkeeping, one row per `.git` folder discovered under
+-- any configured root. `refs_mtime` lets a poll skip a repo whose refs have
+-- not changed at all (no git process needed); `last_scan_ts` is this repo's
+-- own commit-log checkpoint, only advanced after a scan that actually
+-- completed, so a repo whose `git log` times out is retried, not skipped.
+CREATE TABLE IF NOT EXISTS git_repo_scan (
+    path TEXT PRIMARY KEY,
+    refs_mtime REAL NOT NULL,
+    last_scan_ts REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS commits (
@@ -173,6 +186,7 @@ class Database:
     def _init(self) -> None:
         with self._lock, self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate_columns(conn)
             self.fts_available = self._init_fts(conn)
             for k, v in DEFAULT_META.items():
                 conn.execute(
@@ -200,6 +214,14 @@ class Database:
             self._migrate_privacy_defaults(conn)
             conn.commit()
 
+    def _migrate_columns(self, conn: sqlite3.Connection) -> None:
+        """Add a column a later version needs to a table that already
+        existed (`CREATE TABLE IF NOT EXISTS` only helps a brand new one)."""
+        try:
+            conn.execute("ALTER TABLE commit_repos ADD COLUMN last_repo_count INTEGER")
+        except sqlite3.OperationalError:
+            pass  # already has it
+
     def _migrate_privacy_defaults(self, conn: sqlite3.Connection) -> None:
         """Bring a pre-existing database's default privacy rules up to date
         (e.g. the case/accent-insensitive incognito fix) without touching
@@ -226,6 +248,17 @@ class Database:
             (key, str(PRIVACY_DEFAULTS_VERSION)),
         )
 
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """The shared connection, for a caller batching several writes into
+        one commit instead of one per row (A1: a git scan inserting a
+        repo's commits, say). Holds the same (re-entrant) lock `execute`/
+        `query` use, so it is safe alongside the collector's 1 Hz writes."""
+        with self._lock:
+            conn = self.connect()
+            yield conn
+            conn.commit()
+
     def execute(self, sql: str, params: Iterable[Any] = ()) -> int:
         with self._lock, self.connect() as conn:
             cur = conn.execute(sql, params)
@@ -233,7 +266,13 @@ class Database:
             return cur.lastrowid
 
     def query(self, sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
-        with self._lock, self.connect() as conn:
+        # No `with conn:` here: used as a context manager, sqlite3 commits
+        # on every successful exit even for a plain SELECT -- harmless but
+        # not free, and at up to 1 query/s from the collector (plus every
+        # git-history import row, before A1) it measurably added up.
+        # Nothing is written by a read, so there is nothing to commit.
+        with self._lock:
+            conn = self.connect()
             return list(conn.execute(sql, params).fetchall())
 
     def query_one(self, sql: str, params: Iterable[Any] = ()) -> Optional[sqlite3.Row]:
