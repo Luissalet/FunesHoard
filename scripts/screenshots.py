@@ -54,7 +54,7 @@ def main() -> None:
         _agent(base, tool, tool_args)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(timeout=600_000)
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1, locale="en-GB")
 
         page.goto(base + "/", wait_until="networkidle")
@@ -68,6 +68,8 @@ def main() -> None:
 
         page.click("text=Privacy")
         page.wait_for_timeout(500)
+        page.click("button:has-text('Last 30 min')")  # the delete-range shortcut, filled but not confirmed
+        page.mouse.move(10, 890)
         page.screenshot(path=str(MEDIA_DIR / "privacy.png"))
 
         page.click("text=Search")

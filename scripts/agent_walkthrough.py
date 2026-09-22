@@ -23,7 +23,6 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -34,6 +33,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ADAPTER = REPO_ROOT / "funes_hoard" / "mcp_server.py"
 
 TOTAL = {"calls": 0, "chars": 0, "errors": 0, "images": 0}
+FAILED: list = []
+
+
+def check(ok: bool, what: str) -> None:
+    """A use case's "done when", checked on what the model actually received."""
+    print(f"  {'check ok' if ok else 'CHECK FAILED'}: {what}")
+    if not ok:
+        FAILED.append(what)
 
 
 def _tok(n: int) -> int:
@@ -66,10 +73,6 @@ async def call(session: ClientSession, tool: str, args: dict, why: str):
     return data
 
 
-def _minus(iso: str, minutes: int) -> str:
-    return (datetime.fromisoformat(iso) + timedelta(minutes=minutes)).isoformat(timespec="minutes")
-
-
 async def walk(port: int) -> None:
     params = StdioServerParameters(
         command=sys.executable, args=[str(ADAPTER)], env={"FUNES_URL": f"http://127.0.0.1:{port}"},
@@ -96,7 +99,12 @@ async def walk(port: int) -> None:
             if where and where["contexts"]:
                 top = where["contexts"][0]
                 key = top["project"] or top["app"]
-                print(f"  model would say: '{key}: {top['title']}' ({top['human']}); files={top['files']}")
+                named = next((t for t in top.get("recent_titles", []) if "Visual Studio Code" in t), top["title"])
+                print(f"  model would say: '{key}: {named}' ({top['human']}); files={top['files']}")
+                check(top["project"] is not None and top["app"] not in ("Spotify.exe", "WhatsApp.exe"),
+                      "the first context is a project, not the music player (A4)")
+                check(any("Visual Studio Code" in t for t in top.get("recent_titles", [])),
+                      "an editor title (the file) is among recent_titles even if the context ended in a terminal")
                 if not top["files"]:
                     await call(session, "activity_recent_files", {"since": "ayer", "limit": 5},
                                "no files in the context -> recent files since yesterday")
@@ -113,34 +121,51 @@ async def walk(port: int) -> None:
                                "size the novel: search the novel's title")
             if summ:
                 note = [f"Semana: activo {summ['active_human']}, ausente {summ['away_human']}"]
-                for k, v in list((summ.get("by_project") or {}).items())[:8]:
-                    note.append(f"- {k}: {v} s (no *_human per project: the model must convert seconds)")
+                for k, v in list((summ.get("by_project_human") or {}).items())[:8]:
+                    note.append(f"- {k}: {v}")
                 if jobs:
-                    note.append(f"- búsqueda de empleo: {len(jobs['items'])} apariciones (sin duración)")
+                    note.append(f"- búsqueda de empleo: {jobs.get('windows_open_human', '?')} en portales de empleo")
                 if novel:
-                    note.append(f"- novela: {len(novel['items'])} apariciones (sin duración)")
+                    note.append(f"- novela: {novel.get('windows_open_human', '?')}")
+                meetings = (summ.get("by_category_human") or {}).get("Meetings")
+                note.append(f"- reuniones: {meetings or '0'}")
                 print("  note the model could write with Faustus's notes tool:\n    " + "\n    ".join(note))
+                check("by_project_human" in summ, "per-project totals come as human strings (A7)")
+                check(bool(jobs and jobs.get("windows_open_human")) and bool(novel and novel.get("windows_open_human")),
+                      "the job search and the novel are measurable, not just counted (A8)")
+                check(not ({"python", "tools", "docs", "react", "fastapi"} & set(summ.get("by_project") or {})),
+                      "no clone of someone else's repo counts as a project (B3)")
 
             print("\n=== UC4: 'Faustus, ¿cuándo estuve mirando lo de FTS5?' then 'what was I doing around it?'")
             hits = await call(session, "activity_search", {"query": "fts5", "limit": 5}, "'cuándo vi' -> search")
             if hits and hits["items"]:
                 ts = hits["items"][0]["ts"]
-                await call(session, "activity_timeline", {"start": _minus(ts, -15), "end": _minus(ts, 15), "min_minutes": 0},
-                           "chain the hit's ts into a +-15 min timeline (model must do date arithmetic)")
-            await call(session, "activity_search", {"query": "fts5", "since": "el martes"},
-                       "a model saying 'el martes' (Tuesday) as the user did")
-            await call(session, "activity_search", {"query": "fts5", "since": "last tuesday"}, "same in English")
+                around = await call(session, "activity_timeline", {"around": ts},
+                                    "chain the hit's ts straight into the timeline, no date arithmetic (A8)")
+                check(bool(around and any("FTS5" in (i["title"] or "") for i in around["items"])),
+                      "the timeline around the hit contains the hit's own window")
+            tue = await call(session, "activity_search", {"query": "fts5", "since": "el martes", "until": "el martes"},
+                             "a model saying 'el martes' (Tuesday) as the user did (A5)")
+            check(tue is not None, "'el martes' is understood")
+            await call(session, "activity_search", {"query": "fts5", "since": "last tuesday", "until": "last tuesday"},
+                       "same in English")
 
             print("\n=== UC5/UC7: 'no me grabes la próxima media hora' / '¿me estás grabando?'")
             await call(session, "activity_now", {}, "'¿me estás grabando?' before")
             await call(session, "activity_pause", {"minutes": 30}, "'no me grabes media hora'")
-            await call(session, "activity_now", {}, "confirm paused")
+            now2 = await call(session, "activity_now", {}, "confirm paused")
+            check(bool(now2 and now2["paused"] and now2["title"] is None), "while paused nothing is reported as current")
             await call(session, "activity_pause", {"minutes": 0}, "a model trying to 'unpause' with 0")
+
+            for q in ("incógnito", "Banco Ejemplo"):
+                r = await call(session, "activity_search", {"query": q}, "UC5: nothing private is searchable")
+                check(bool(r is not None and not r["items"]), f"'{q}' finds nothing")
 
             print("\n=== Error handling as a small model makes mistakes")
             await call(session, "activity_summary", {"day": "esta semana", "group_by": "projects"}, "plural typo")
             await call(session, "activity_timeline", {"start": "ayer", "limit": 500}, "limit over the cap")
-            await call(session, "activity_where_was_i", {"before": "antes de comer"}, "Spanish phrase from the keywords")
+            await call(session, "activity_where_was_i", {"before": "antes de comer"}, "a phrase no longer advertised (A5)")
+            await call(session, "activity_timeline", {"around": "ayer 12:00", "start": "ayer"}, "around and start together")
             await call(session, "activity_search", {"query": "¿?"}, "no words")
             await call(session, "activity_timeline", {"start": "ayer"}, "whole yesterday, default page")
             tl = await call(session, "activity_timeline", {"start": "esta semana", "limit": 100}, "a week at max limit")
@@ -152,6 +177,10 @@ async def walk(port: int) -> None:
     httpx.post(f"http://127.0.0.1:{port}/api/privacy/resume", timeout=5)
     print(f"\nTOTAL: {TOTAL['calls']} calls, {TOTAL['chars']} chars (~{_tok(TOTAL['chars'])} tokens), "
           f"{TOTAL['errors']} errors, {TOTAL['images']} results with non-text content")
+    check(TOTAL["images"] == 0, "no tool result carries an image")
+    print("failed checks:", FAILED or "none")
+    if FAILED:
+        sys.exit(1)
 
 
 def main() -> None:
