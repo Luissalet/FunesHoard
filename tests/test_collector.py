@@ -202,6 +202,36 @@ def test_zero_length_span_stub_is_never_persisted(tmp_path):
     assert len(away_rows) == 1 and away_rows[0]["start_ts"] == T0
 
 
+def test_meetings_and_media_get_a_much_longer_away_threshold(tmp_path):
+    # A3: a 20-minute idle gap during a Teams call must stay active (Teams.exe
+    # is a Meetings default), while the same gap in a plain editor goes away.
+    db = Database(tmp_path / "data")
+    probe = make_probe([
+        ("Teams.exe", "Weekly sync", 0, False),
+        ("Teams.exe", "Weekly sync", 20 * 60, False),  # 20 min idle: below the 30 min meetings threshold
+    ])
+    c = Collector(db, probe, interval_s=1)
+    c.tick(now=T0)
+    c.tick(now=T0 + 60)
+    closed_rows = db.query("SELECT * FROM spans WHERE open = 0")
+    assert closed_rows == []  # still one continuous active span, not yet closed
+    open_row = db.query_one("SELECT * FROM spans WHERE open = 1")
+    assert open_row["kind"] == "active"
+
+
+def test_meetings_threshold_does_not_apply_to_ordinary_apps(tmp_path):
+    db = Database(tmp_path / "data")
+    probe = make_probe([
+        ("Code.exe", "x - Foo - Visual Studio Code", 0, False),
+        ("Code.exe", "x - Foo - Visual Studio Code", 20 * 60, False),  # 20 min idle: well past the 2 min default
+    ])
+    c = Collector(db, probe, interval_s=1)
+    c.tick(now=T0)
+    c.tick(now=T0 + 60)
+    open_row = db.query_one("SELECT * FROM spans WHERE open = 1")
+    assert open_row["kind"] == "away"
+
+
 def test_pause_at_least_never_shortens_or_ends_an_existing_pause(tmp_path):
     db = Database(tmp_path / "data")
     c = Collector(db, make_probe([("a", "b", 0, False)]), interval_s=1)

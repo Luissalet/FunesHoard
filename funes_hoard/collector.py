@@ -176,6 +176,22 @@ class Collector:
         """Pause until a human explicitly resumes it (no auto-expiry)."""
         self.db.set_meta("paused_until", "inf")
 
+    def _away_after_s_for(self, sample: Sample) -> float:
+        """A3: a meeting or a video with no keyboard/mouse input is not
+        idleness -- it gets a much longer away threshold, configurable
+        separately from the ordinary one. Classification is already
+        computed for every span at persist time; this is the same lookup,
+        just run early enough to decide whether the sample counts as away."""
+        base = float(self.db.get_meta("away_after_s", "120"))
+        if sample.locked or not sample.app:
+            return base
+        rules = _load_classify_rules(self.db)
+        repos = _known_repo_names(self.db)
+        category, _ = classify(sample.app, sample.exe, sample.title, rules, repos)
+        if category in ("Meetings", "Media"):
+            return float(self.db.get_meta("away_after_meetings_s", "1800"))
+        return base
+
     def tick(self, now: Optional[float] = None) -> None:
         with self._lock:
             sample = self.probe.sample()
@@ -192,7 +208,8 @@ class Collector:
             if cleaned is None:
                 self._interrupt(sample.ts)
                 return
-            closed = self.builder.add_sample(cleaned)
+            away_after_s = self._away_after_s_for(cleaned)
+            closed = self.builder.add_sample(cleaned, away_after_s=away_after_s)
             for span in closed:
                 self._persist_close(span)
             self._maybe_flush_open(sample.ts)

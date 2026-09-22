@@ -266,6 +266,8 @@ export const api = {
     ),
   writeMyDaySetting: () => req<{ enabled: boolean }>("GET", "/api/settings/write-my-day"),
   setWriteMyDaySetting: (enabled: boolean) => req<{ enabled: boolean }>("PUT", "/api/settings/write-my-day", { enabled }),
+  meetingsAwaySetting: () => req<{ minutes: number }>("GET", "/api/settings/meetings-away"),
+  setMeetingsAwaySetting: (minutes: number) => req<{ minutes: number }>("PUT", "/api/settings/meetings-away", { minutes }),
 };
 
 export function formatDuration(seconds: number): string {

@@ -159,6 +159,19 @@ def test_restart_during_the_same_idle_does_not_duplicate_the_away_span():
     assert b2.peek_open().start_ts == persisted_end
 
 
+def test_per_sample_away_after_s_override_widens_the_threshold():
+    # A3: a per-call override (e.g. a longer threshold while the foreground
+    # app is a meeting) takes precedence over the builder's own default.
+    b = SpanBuilder(away_after_s=120, sleep_gap_s=9999)
+    b.add_sample(s(0, idle_s=0))
+    closed = b.add_sample(s(500, idle_s=500), away_after_s=1800)  # would be away at the default 120
+    assert closed == []
+    assert b.peek_open().kind == "active"
+    closed = b.add_sample(s(2000, idle_s=2000), away_after_s=1800)  # now past even the widened threshold
+    assert closed and closed[0].kind == "active"
+    assert b.peek_open().kind == "away"
+
+
 def test_away_after_a_pause_starts_no_earlier_than_the_pause() -> None:
     b = SpanBuilder(away_after_s=60, sleep_gap_s=9999)
     b.add_sample(s(1000, idle_s=0))

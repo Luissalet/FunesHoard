@@ -226,6 +226,19 @@ def test_demo_flag_seeds_an_empty_data_dir(tmp_path):
         assert c.get("/api/health").json()["spans"] > 20
 
 
+# --- A3: the Meetings/Media away threshold is configurable -----------------
+def test_meetings_away_setting_round_trip(client):
+    assert client.get("/api/settings/meetings-away").json()["minutes"] == 30
+    r = client.put("/api/settings/meetings-away", json={"minutes": 45})
+    assert r.json()["minutes"] == 45
+    assert client.get("/api/settings/meetings-away").json()["minutes"] == 45
+
+
+def test_meetings_away_setting_rejects_out_of_range(client):
+    r = client.put("/api/settings/meetings-away", json={"minutes": 1})
+    assert r.status_code == 400
+
+
 # --- A2: adding a commit-repo folder gives real feedback -------------------
 def test_commit_repo_rejects_a_path_that_does_not_exist(client):
     r = client.post("/api/commit-repos", json={"path": "/no/such/folder/anywhere"})

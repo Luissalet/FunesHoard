@@ -80,8 +80,13 @@ class SpanBuilder:
     def current(self) -> Optional[Span]:
         return self._current
 
-    def add_sample(self, s: Sample) -> List[Span]:
+    def add_sample(self, s: Sample, away_after_s: Optional[float] = None) -> List[Span]:
+        """`away_after_s` overrides `self.away_after_s` for this one sample
+        (A3: the caller passes a longer threshold while the foreground app
+        is a meeting or a video, since no input for a while there is normal,
+        not idleness)."""
         closed: List[Span] = []
+        threshold = self.away_after_s if away_after_s is None else away_after_s
 
         if self._last_ts is not None and (s.ts - self._last_ts) > self.sleep_gap_s:
             if self._current is not None:
@@ -89,7 +94,7 @@ class SpanBuilder:
                 closed.append(self._current)
                 self._current = None
 
-        kind = "locked" if s.locked else ("away" if s.idle_s >= self.away_after_s else "active")
+        kind = "locked" if s.locked else ("away" if s.idle_s >= threshold else "active")
 
         if kind == "away" and (self._current is None or self._current.kind != "away"):
             if self._current is not None:

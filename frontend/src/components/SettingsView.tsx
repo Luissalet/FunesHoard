@@ -21,6 +21,7 @@ export function SettingsView({ lang }: { lang: Lang }) {
 
   const [writeMyDay, setWriteMyDay] = useState(true);
   const [featureMsg, setFeatureMsg] = useState<string | null>(null);
+  const [meetingsAwayMin, setMeetingsAwayMin] = useState(30);
 
   function refresh() {
     api
@@ -34,6 +35,7 @@ export function SettingsView({ lang }: { lang: Lang }) {
         setLoadError(null);
       })
       .catch((err) => setLoadError(errorMessage(err)));
+    api.meetingsAwaySetting().then((r) => setMeetingsAwayMin(r.minutes)).catch(() => {});
   }
   useEffect(refresh, []);
 
@@ -84,6 +86,16 @@ export function SettingsView({ lang }: { lang: Lang }) {
     setWriteMyDay(enabled);
     try {
       await api.setWriteMyDaySetting(enabled);
+      setFeatureMsg(t.saved);
+    } catch (err) {
+      setFeatureMsg(errorMessage(err));
+    }
+  }
+
+  async function saveMeetingsAway(minutes: number) {
+    setMeetingsAwayMin(minutes);
+    try {
+      await api.setMeetingsAwaySetting(minutes);
       setFeatureMsg(t.saved);
     } catch (err) {
       setFeatureMsg(errorMessage(err));
@@ -179,6 +191,21 @@ export function SettingsView({ lang }: { lang: Lang }) {
             <input type="checkbox" checked={writeMyDay} onChange={(e) => toggleWriteMyDay(e.target.checked)} />
             <span />
           </label>
+        </div>
+        <div className="row" style={{ justifyContent: "space-between", marginTop: 12 }}>
+          <div>
+            <strong>{t.meetings_away}</strong>
+            <p className="muted" style={{ fontSize: 12, margin: "2px 0 0" }}>{t.meetings_away_hint}</p>
+          </div>
+          <input
+            type="number"
+            min={5}
+            max={180}
+            step={5}
+            value={meetingsAwayMin}
+            onChange={(e) => saveMeetingsAway(Number(e.target.value))}
+            style={{ width: 70 }}
+          />
         </div>
         {featureMsg && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{featureMsg}</p>}
       </div>

@@ -117,6 +117,10 @@ CREATE INDEX IF NOT EXISTS idx_day_narratives_start ON day_narratives(day_start_
 DEFAULT_META = {
     "rules_version": "1",
     "away_after_s": "120",
+    # A3: a meeting or a video with no keyboard/mouse input still counts as
+    # active for much longer than an idle desk -- a 45-minute interview with
+    # no input should not show as 0 minutes in Meetings.
+    "away_after_meetings_s": "1800",
     "retention_days": "180",
     "paused_until": "",
     "sample_interval_s": "1",

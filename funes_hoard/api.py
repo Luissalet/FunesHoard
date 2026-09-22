@@ -188,6 +188,10 @@ class FeatureToggleIn(BaseModel):
     enabled: bool
 
 
+class MeetingsAwaySettingIn(BaseModel):
+    minutes: float = Field(ge=5, le=180)
+
+
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 AGENT_TOOLS = (
     "activity_now", "activity_where_was_i", "activity_timeline", "activity_summary",
@@ -638,6 +642,19 @@ def create_app(
     def write_my_day_setting_put(body: FeatureToggleIn):
         db.set_meta("write_my_day_enabled", "1" if body.enabled else "0")
         return {"enabled": body.enabled}
+
+    @app.get("/api/settings/meetings-away")
+    def meetings_away_setting_get():
+        # A3: how long a Meetings/Media span may sit idle before it counts
+        # as away -- much longer than the ordinary threshold, since a call
+        # or a video with no keyboard/mouse input is not idleness.
+        seconds = float(db.get_meta("away_after_meetings_s", "1800") or 1800)
+        return {"minutes": seconds / 60.0}
+
+    @app.put("/api/settings/meetings-away")
+    def meetings_away_setting_put(body: MeetingsAwaySettingIn):
+        db.set_meta("away_after_meetings_s", str(body.minutes * 60.0))
+        return {"minutes": body.minutes}
 
     # ----------------------------------------------------- privacy admin --
     @app.get("/api/privacy/rules")
