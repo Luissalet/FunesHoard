@@ -93,7 +93,7 @@ ni sqlite. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Pruebas
 
 ```
-.venv/bin/python -m pytest -q          # 177 pasan en unos 30 s
+.venv/bin/python -m pytest -q          # 179 pasan en unos 10 s
 cd frontend && npm ci && npm run build  # 0 errores de TypeScript
 ```
 

@@ -89,11 +89,10 @@ def test_poller_defaults_to_the_repos_own_git_identity(tmp_path):
     mine = root / "atlas"
     _init_repo(mine, "Luissalet", "luissalet@users.noreply.github.com", "feat: mine")
     # Someone else's commit in the same repo must not be recorded.
+    # -c overrides the repo's own identity for this one commit (author and committer).
     subprocess.run(
         ["git", "-c", "user.name=Other", "-c", "user.email=o@example.com", "commit", "-q", "--allow-empty", "-m", "theirs"],
         cwd=str(mine), check=True, capture_output=True,
-        env={"GIT_AUTHOR_NAME": "Other", "GIT_AUTHOR_EMAIL": "o@example.com", "PATH": __import__("os").environ["PATH"],
-             "HOME": str(tmp_path)},
     )
     db = Database(tmp_path / "data")
     db.execute("INSERT INTO commit_repos(path, enabled) VALUES (?, 1)", (str(root),))
