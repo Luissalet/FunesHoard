@@ -3,7 +3,7 @@
   "id": "funes",
   "name": "Funes's Hoard",
   "purpose": "Gives the assistant a read-only, privacy-filtered memory of what the user was doing on this computer: app, window, files, commits, over time.",
-  "capabilities": ["activity timeline", "day summaries", "focus blocks", "resume context", "recent files", "git commits", "search history"],
+  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search"],
   "placeholders": ["FUNES_DIR", "APP_URL"],
   "defaults": {"APP_URL": "http://127.0.0.1:8813"},
   "app": {
@@ -27,5 +27,5 @@
     "optional_env": []
   },
   "provides": {"skills": ["skills/where-was-i/SKILL.md"]},
-  "notes": "Local episodic memory: foreground app/window, idle/away, files opened and commits made, with privacy rules applied before storage. Read-only for the assistant except pausing recording."
+  "notes": "Local episodic memory: foreground app/window, idle/away, files opened and commits made, with privacy rules applied before storage. Read-only for the assistant except pausing recording, and a pause from the assistant never shortens one you set."
 }
