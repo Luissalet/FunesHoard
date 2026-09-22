@@ -68,6 +68,20 @@ export interface SearchItem {
   ref_id: number;
   ts: number;
   text: string;
+  /** Window-title hits only: how long that window was open. */
+  duration_s?: number;
+}
+
+export interface WhereContext {
+  project: string | null;
+  app: string;
+  title: string;
+  recent_titles?: string[];
+  start: number;
+  end: number;
+  duration_s: number;
+  files: string[];
+  commits: { subject: string; sha: string }[];
 }
 
 export interface ProjectItem {
@@ -221,7 +235,7 @@ export const api = {
   projects: (params: { since?: string; limit?: number }) =>
     req<{ items: ProjectItem[]; truncated: boolean }>("GET", `/api/projects${qs(params)}`),
   whereWasI: (params: { before?: string; contexts?: number }) =>
-    req<{ before: number; contexts: unknown[] }>("GET", `/api/where-was-i${qs(params)}`),
+    req<{ before: number; contexts: WhereContext[] }>("GET", `/api/where-was-i${qs(params)}`),
   agentCalls: (limit = 50) => req<{ items: AgentCall[] }>("GET", `/api/agent-calls${qs({ limit })}`),
 
   classifyRules: () => req<{ items: ClassifyRule[]; categories: string[] }>("GET", "/api/classify/rules"),
@@ -245,6 +259,7 @@ export const api = {
   deleteRange: (start: number, end: number) =>
     req<{ deleted: Record<string, number> }>("POST", "/api/privacy/delete-range", { start, end }),
   exportUrl: (start?: number, end?: number) => `/api/privacy/export${qs({ start, end })}`,
+  exportCsvUrl: (start?: number, end?: number) => `/api/privacy/export.csv${qs({ start, end })}`,
 
   commitRepos: () => req<{ items: CommitRepo[] }>("GET", "/api/commit-repos"),
   addCommitRepo: (path: string) => req("POST", "/api/commit-repos", { path, enabled: true }),
@@ -272,6 +287,7 @@ export const api = {
 
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
+  if (s > 0 && s < 60) return "<1m"; // a 12-second blip is not "0m"
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
@@ -286,7 +302,9 @@ export function formatDuration(seconds: number): string {
 export function localeFor(lang: string): string {
   try {
     const nav = navigator.language || "";
-    if (nav.toLowerCase().startsWith(lang)) return nav;
+    // A POSIX-style value ("en-US@posix", seen on a Linux box with LANG=C)
+    // is not a BCP 47 tag: toLocaleTimeString would throw and blank the app.
+    if (nav.toLowerCase().startsWith(lang) && Intl.DateTimeFormat.supportedLocalesOf([nav]).length) return nav;
   } catch {
     /* ignore */
   }

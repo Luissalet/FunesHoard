@@ -654,3 +654,94 @@ select {
   gap: 4px;
   font-size: 13px;
 }
+
+/* C2: away and locked time are drawn, hatched, so a plain gap only ever
+   means "not recording". */
+.timeline-seg.seg-away,
+.timeline-legend i.seg-away {
+  background: repeating-linear-gradient(135deg, var(--border) 0 3px, transparent 3px 7px);
+  opacity: 1;
+}
+
+.timeline-seg.seg-locked,
+.timeline-legend i.seg-locked {
+  background: repeating-linear-gradient(90deg, var(--text-muted) 0 1px, transparent 1px 5px);
+  opacity: 0.45;
+}
+
+/* C6: segments are reachable with Tab; show where the focus is. */
+.timeline-seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.where-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.where-item {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.where-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.where-title {
+  color: var(--text-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.where-refs {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.where-refs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tech-details {
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.tech-details summary {
+  cursor: pointer;
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.clickable:hover td,
+tr.clickable:focus-visible td {
+  background: var(--bg-sidebar);
+}
+
+tr.clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

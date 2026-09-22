@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Download, Plus, Trash2 } from "lucide-react";
-import { api, errorMessage, formatClock, type PrivacyRule, type StatusInfo } from "../api";
+import { api, errorMessage, formatClock, parseIsoDay, type PrivacyRule, type StatusInfo } from "../api";
 import { fmt, STRINGS, type Lang } from "../i18n";
 import { InlineConfirm } from "./Common";
 
@@ -13,6 +13,8 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
   const [draftPattern, setDraftPattern] = useState("");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [retentionMsg, setRetentionMsg] = useState<string | null>(null);
@@ -22,6 +24,18 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
     api.getRetention().then((r) => setRetentionDays(r.days));
   }
   useEffect(refresh, []);
+
+  // A9: "delete the half hour I forgot" -- fill both pickers in one click.
+  function preset(minutes: number | "today") {
+    const now = new Date();
+    const start = minutes === "today" ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(now.getTime() - minutes * 60000);
+    setRangeStart(toLocalInput(start));
+    setRangeEnd(toLocalInput(now));
+    setDeleteMsg(null);
+  }
+  // A10: optional export range, whole local days.
+  const exportStart = exportFrom ? parseIsoDay(exportFrom).getTime() / 1000 : undefined;
+  const exportEnd = exportTo ? parseIsoDay(exportTo).getTime() / 1000 + 86400 : undefined;
 
   const excludeRules = rules.filter((r) => r.kind === "exclude");
   const redactRules = rules.filter((r) => r.kind === "redact");
@@ -174,15 +188,36 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
         </div>
 
         <div className="card">
-          <div className="section-title">{t.export_json}</div>
-          <a className="btn" href={api.exportUrl()} download>
-            <Download size={14} /> {t.export_json}
-          </a>
+          <div className="section-title">{t.export}</div>
+          <div className="row">
+            <label>
+              {t.export_from} <input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} />
+            </label>
+            <label>
+              {t.export_to} <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <a className="btn btn-primary" href={api.exportCsvUrl(exportStart, exportEnd)} download>
+              <Download size={14} /> {t.export_csv}
+            </a>
+            <a className="btn" href={api.exportUrl(exportStart, exportEnd)} download>
+              <Download size={14} /> {t.export_all_json}
+            </a>
+          </div>
+          <p className="muted" style={{ fontSize: 12, margin: "8px 0 0" }}>{t.export_hint}</p>
         </div>
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="section-title">{t.delete_range}</div>
+        <div className="row" style={{ marginBottom: 10 }}>
+          <button className="btn btn-small" onClick={() => preset(15)}>{t.preset_15m}</button>
+          <button className="btn btn-small" onClick={() => preset(30)}>{t.preset_30m}</button>
+          <button className="btn btn-small" onClick={() => preset(60)}>{t.preset_1h}</button>
+          <button className="btn btn-small" onClick={() => preset("today")}>{t.day_picker_today}</button>
+          <span className="muted" style={{ fontSize: 12 }}>{t.delete_presets_hint}</span>
+        </div>
         <div className="row">
           <label>
             {t.delete_range_start}{" "}
@@ -246,4 +281,10 @@ function RuleList({ title, rules, onDelete }: { title: string; rules: PrivacyRul
       </table>
     </div>
   );
+}
+
+/** A Date as the value a datetime-local input expects (local time, minutes). */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

@@ -1,6 +1,6 @@
 import { FileText, GitCommit, Monitor, Search } from "lucide-react";
 import { useState } from "react";
-import { api, errorMessage, formatClock, formatLongDate, type SearchItem } from "../api";
+import { api, errorMessage, formatClock, formatDuration, formatLongDate, isoDay, type SearchItem } from "../api";
 import { fmt, STRINGS, type Lang } from "../i18n";
 import { EmptyState } from "./Common";
 
@@ -13,7 +13,7 @@ const RANGES = [
 
 const SOURCE_ICON = { span: Monitor, file: FileText, commit: GitCommit } as const;
 
-export function SearchView({ lang }: { lang: Lang }) {
+export function SearchView({ lang, onOpenMoment }: { lang: Lang; onOpenMoment: (day: string, at: number) => void }) {
   const t = STRINGS[lang];
   const [query, setQuery] = useState("");
   const [range, setRange] = useState(0);
@@ -82,7 +82,7 @@ export function SearchView({ lang }: { lang: Lang }) {
       {items !== null && items.length === 0 && <EmptyState title={t.no_data_title} body={t.no_data_body} />}
       {items !== null && items.length > 0 && (
         <p className="muted" style={{ fontSize: 12, margin: "12px 2px 0" }}>
-          {fmt(t.results_count, { n: truncated ? `${items.length}+` : items.length })}
+          {fmt(t.results_count, { n: truncated ? `${items.length}+` : items.length })} · {t.search_click_hint}
         </p>
       )}
 
@@ -93,13 +93,25 @@ export function SearchView({ lang }: { lang: Lang }) {
             <tbody>
               {dayItems.map((item) => {
                 const Icon = SOURCE_ICON[item.source as keyof typeof SOURCE_ICON] || Monitor;
+                // A8: a hit opens that moment in its day's timeline.
+                const open = () => onOpenMoment(isoDay(new Date(item.ts * 1000)), item.ts);
                 return (
-                  <tr key={`${item.source}-${item.ref_id}`}>
+                  <tr
+                    key={`${item.source}-${item.ref_id}`}
+                    className="clickable"
+                    tabIndex={0}
+                    title={t.open_in_day}
+                    onClick={open}
+                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open())}
+                  >
                     <td className="muted" style={{ width: 64 }}>{formatClock(item.ts, lang)}</td>
                     <td style={{ width: 28 }} title={item.source}>
                       <Icon size={14} color="var(--text-muted)" />
                     </td>
                     <td className="snippet">{renderSnippet(item.text)}</td>
+                    <td className="muted" style={{ width: 70, textAlign: "right" }}>
+                      {item.duration_s !== undefined ? formatDuration(item.duration_s) : ""}
+                    </td>
                   </tr>
                 );
               })}
