@@ -10,27 +10,28 @@ import logging.handlers
 import re
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable, Optional
-
-from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from funes_hoard import __version__, queries
-from funes_hoard.collector import Collector
-from funes_hoard.core.classify import CATEGORIES, ClassifyRule, classify, default_rules
-from funes_hoard.core.privacy import PauseState
+from funes_hoard.collector import Collector, _known_repo_names
+from funes_hoard.core.classify import CATEGORIES, ClassifyRule, classify
 from funes_hoard.db import Database
-from funes_hoard.git_watch import GitCommitsPoller
+from funes_hoard.errors import BadInput
+from funes_hoard.git_watch import GitCommitsPoller, configured_authors
 from funes_hoard.jobs import JobManager
 from funes_hoard.recent_files import RecentFilesPoller, windows_recent_dir
 from funes_hoard.retention import delete_range, run_retention
 from funes_hoard.scheduler import BackgroundScheduler
-from funes_hoard.timeparse import TimeParseError
 
 SERVICE = "funes-hoard"
 DISPLAY_NAME = "Funes's Hoard"
@@ -78,6 +79,7 @@ class TimelineArgs(BaseModel):
     end: Optional[str] = None
     min_minutes: float = Field(default=2, ge=0)
     limit: int = Field(default=40, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
 
 
 class SummaryArgs(BaseModel):
@@ -137,6 +139,61 @@ class CommitRepoIn(BaseModel):
     enabled: bool = True
 
 
+class CommitAuthorsIn(BaseModel):
+    authors: list[str] = Field(default_factory=list, max_length=20)
+
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
+AGENT_TOOLS = (
+    "activity_now", "activity_where_was_i", "activity_timeline", "activity_summary",
+    "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
+)
+PRIVACY_MATCH_TYPES = ("app", "title_regex")
+CLASSIFY_MATCH_TYPES = ("app", "title_regex", "domain")
+
+
+def _split_host(value: str) -> tuple[str, Optional[int], bool]:
+    """'127.0.0.1:8813' -> ('127.0.0.1', 8813, True); malformed -> ok=False."""
+    value = value.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        if end == -1:
+            return "", None, False
+        host, rest = value[: end + 1], value[end + 1:]
+    else:
+        host, sep, port = value.partition(":")
+        rest = f":{port}" if sep else ""
+    if not rest:
+        return host, None, True
+    if not rest.startswith(":") or not rest[1:].isdigit():
+        return "", None, False
+    return host, int(rest[1:]), True
+
+
+def _host_allowed(host: str, port: Optional[int], app_port: Optional[int]) -> bool:
+    if host not in LOOPBACK_HOSTS:
+        return False
+    if app_port is None:
+        return True
+    return port == app_port or (port is None and app_port == 80)
+
+
+def _error(status: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse({"error": code, "message": message}, status_code=status)
+
+
+def _validate_rule(match_type: str, pattern: str, allowed: tuple[str, ...]) -> None:
+    if match_type not in allowed:
+        raise BadInput("bad_match_type", f"match_type must be one of {', '.join(allowed)} (got {match_type!r}).")
+    if not pattern.strip():
+        raise BadInput("bad_pattern", "pattern must not be empty.")
+    if match_type == "title_regex":
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise BadInput("bad_pattern", f"invalid regular expression: {exc}") from exc
+
+
 def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = False, port: Optional[int] = None) -> FastAPI:
     data_dir = Path(data_dir)
     _setup_logging(data_dir)
@@ -176,30 +233,57 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
     app.state.demo = demo
 
     # ------------------------------------------------------------ guard --
-    LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
-
     @app.middleware("http")
     async def browser_attack_guard(request: Request, call_next):
-        host_header = request.headers.get("host", "")
-        hostname = host_header.rsplit(":", 1)[0] if ":" in host_header and not host_header.startswith("[") else host_header
-        if host_header.startswith("["):
-            hostname = host_header.split("]")[0] + "]"
-        if hostname not in LOOPBACK_HOSTS:
-            return JSONResponse({"error": "forbidden_host", "message": "Host header does not match a loopback address."}, status_code=403)
+        # DNS rebinding: a hostile page whose domain resolves to 127.0.0.1
+        # still sends its own name (or the wrong port) in Host.
+        host, host_port, ok = _split_host(request.headers.get("host", ""))
+        if not ok or not _host_allowed(host, host_port, port):
+            return _error(403, "forbidden_host", "Host header does not match this app's loopback address.")
         if request.method not in ("GET", "HEAD", "OPTIONS"):
+            if request.headers.get("sec-fetch-site") == "cross-site":
+                return _error(403, "forbidden_origin", "Cross-site request rejected.")
             origin = request.headers.get("origin")
-            sec_fetch_site = request.headers.get("sec-fetch-site")
-            if sec_fetch_site == "cross-site":
-                return JSONResponse({"error": "forbidden_origin", "message": "Cross-site request rejected."}, status_code=403)
-            if origin:
-                own_origin_hosts = LOOPBACK_HOSTS
-                m = re.match(r"^https?://([^/]+)$", origin)
-                origin_host = m.group(1) if m else ""
-                origin_hostname = origin_host.rsplit(":", 1)[0]
-                if origin_hostname not in own_origin_hosts:
-                    return JSONResponse({"error": "forbidden_origin", "message": "Origin does not match this app."}, status_code=403)
-        response = await call_next(request)
-        return response
+            if origin is not None:
+                parts = urlsplit(origin)
+                try:
+                    origin_port = parts.port
+                except ValueError:
+                    origin_port = -1
+                if origin_port is None:
+                    origin_port = 443 if parts.scheme == "https" else 80
+                own = (
+                    parts.scheme == "http"
+                    and (parts.hostname or "") in LOOPBACK_HOSTS
+                    and (port is None or origin_port == port)
+                )
+                if not own:
+                    return _error(403, "forbidden_origin", "Origin does not match this app.")
+        return await call_next(request)
+
+    # ----------------------------------------------------------- errors --
+    @app.exception_handler(BadInput)
+    async def bad_input_handler(_: Request, exc: BadInput):
+        return _error(400, exc.code, exc.message)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error_handler(_: Request, exc: StarletteHTTPException):
+        if isinstance(exc.detail, dict) and "error" in exc.detail:
+            return JSONResponse(exc.detail, status_code=exc.status_code)
+        code = {404: "not_found", 405: "method_not_allowed"}.get(exc.status_code, f"http_{exc.status_code}")
+        return _error(exc.status_code, code, str(exc.detail))
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request: Request, exc: RequestValidationError):
+        problems = []
+        for err in exc.errors():
+            loc = ".".join(str(x) for x in err.get("loc", ()) if x not in ("body", "query", "path"))
+            problems.append(f"{loc or 'body'}: {err.get('msg', 'invalid')}")
+        message = "; ".join(problems) or "invalid arguments"
+        tool = request.url.path.rsplit("/", 1)[-1]
+        if request.url.path.startswith("/api/agent/") and tool in AGENT_TOOLS:
+            _log_agent_call(tool, "(invalid arguments)", 0.0, False, message)
+        return _error(400, "bad_arguments", message)
 
     # ------------------------------------------------------------ health --
     @app.get("/api/health")
@@ -225,73 +309,84 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
     def run_agent(tool: str, args_summary: str, fn: Callable[[], dict]):
         started = time.perf_counter()
         try:
-            result = fn()
-        except TimeParseError as exc:
-            duration = (time.perf_counter() - started) * 1000
-            _log_agent_call(tool, args_summary, duration, False, str(exc))
-            raise HTTPException(status_code=400, detail={"error": "bad_time", "message": str(exc)})
+            result = queries.agent_view(fn())
+        except BadInput as exc:
+            _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, False, exc.message)
+            raise
         except Exception as exc:  # pragma: no cover - defensive
-            duration = (time.perf_counter() - started) * 1000
-            _log_agent_call(tool, args_summary, duration, False, str(exc))
-            raise HTTPException(status_code=500, detail={"error": "internal_error", "message": str(exc)})
-        duration = (time.perf_counter() - started) * 1000
-        _log_agent_call(tool, args_summary, duration, True, None)
+            logging.getLogger("funes_hoard.api").exception("agent tool %s failed", tool)
+            _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, False, type(exc).__name__)
+            raise HTTPException(status_code=500, detail={
+                "error": "internal_error",
+                "message": f"{tool} failed unexpectedly ({type(exc).__name__}); details are in the app log.",
+            })
+        _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, True, None)
         return result
+
+    def _args(**kwargs) -> str:
+        """Compact, human-readable audit summary: only the arguments given."""
+        return " ".join(f"{k}={v!r}" for k, v in kwargs.items() if v is not None) or "(defaults)"
 
     # ------------------------------------------------------ agent routes --
     @app.post("/api/agent/activity_now")
     def agent_activity_now():
-        return run_agent("activity_now", "{}", lambda: queries.activity_now(db, collector))
+        return run_agent("activity_now", "(no arguments)", lambda: queries.activity_now(db, collector))
 
     @app.post("/api/agent/activity_where_was_i")
     def agent_where_was_i(args: WhereWasIArgs):
         return run_agent(
-            "activity_where_was_i", f"before={args.before} contexts={args.contexts}",
+            "activity_where_was_i", _args(before=args.before, contexts=args.contexts),
             lambda: queries.activity_where_was_i(db, args.before, args.contexts),
         )
 
     @app.post("/api/agent/activity_timeline")
     def agent_timeline(args: TimelineArgs):
         return run_agent(
-            "activity_timeline", f"start={args.start} end={args.end} limit={args.limit}",
-            lambda: queries.activity_timeline(db, args.start, args.end, args.min_minutes, args.limit),
+            "activity_timeline", _args(start=args.start, end=args.end, limit=args.limit, offset=args.offset or None),
+            lambda: queries.activity_timeline(db, args.start, args.end, args.min_minutes, args.limit, offset=args.offset),
         )
 
     @app.post("/api/agent/activity_summary")
     def agent_summary(args: SummaryArgs):
         return run_agent(
-            "activity_summary", f"day={args.day} start={args.start} end={args.end}",
+            "activity_summary", _args(day=args.day, start=args.start, end=args.end, group_by=args.group_by),
             lambda: queries.activity_summary(db, args.day, args.start, args.end, args.group_by),
         )
 
     @app.post("/api/agent/activity_search")
     def agent_search(args: SearchArgs):
         return run_agent(
-            "activity_search", f"query={args.query!r} limit={args.limit}",
+            "activity_search", _args(query=args.query, since=args.since, until=args.until, limit=args.limit),
             lambda: queries.activity_search(db, args.query, args.since, args.until, args.limit),
         )
 
     @app.post("/api/agent/activity_recent_files")
     def agent_recent_files(args: RecentFilesArgs):
         return run_agent(
-            "activity_recent_files", f"since={args.since} limit={args.limit}",
+            "activity_recent_files", _args(since=args.since, limit=args.limit),
             lambda: queries.activity_recent_files(db, args.since, args.limit),
         )
 
     @app.post("/api/agent/activity_projects")
     def agent_projects(args: ProjectsArgs):
         return run_agent(
-            "activity_projects", f"since={args.since} limit={args.limit}",
+            "activity_projects", _args(since=args.since, limit=args.limit),
             lambda: queries.activity_projects(db, args.since, args.limit),
         )
 
     @app.post("/api/agent/activity_pause")
     def agent_pause(args: PauseArgs):
         def _do():
-            until = collector.pause(args.minutes)
-            return {"paused": True, "until": until, "minutes": args.minutes}
+            until, extended = collector.pause_at_least(args.minutes)
+            if until is None:
+                note = "already paused until the user resumes it; nothing changed"
+            elif extended:
+                note = f"recording paused for {args.minutes:g} min; it resumes by itself"
+            else:
+                note = "already paused for longer than that; nothing changed"
+            return {"paused": True, "until": until, "until_resumed": until is None, "note": note}
 
-        return run_agent("activity_pause", f"minutes={args.minutes}", _do)
+        return run_agent("activity_pause", _args(minutes=args.minutes), _do)
 
     # --------------------------------------------------------- UI routes --
     @app.get("/api/status")
@@ -304,11 +399,12 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         return info
 
     @app.get("/api/timeline")
-    def ui_timeline(start: Optional[str] = None, end: Optional[str] = None, min_minutes: float = 2, limit: int = 200):
-        return queries.activity_timeline(db, start, end, min_minutes, limit)
+    def ui_timeline(day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
+                    min_minutes: float = 2, limit: int = 100, offset: int = 0):
+        return queries.activity_timeline(db, start, end, min_minutes, limit, offset=offset, day=day)
 
     @app.get("/api/summary")
-    def ui_summary(day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, group_by: str = "category"):
+    def ui_summary(day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, group_by: str = "all"):
         return queries.activity_summary(db, day, start, end, group_by)
 
     @app.get("/api/search")
@@ -350,7 +446,7 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         for i in range(7):
             d = monday + timedelta(days=i)
             day_str = d.isoformat()
-            days.append({"date": day_str, **queries.activity_summary(db, day_str, None, None, "category")})
+            days.append({"date": day_str, **queries.activity_summary(db, day_str, None, None, "all")})
         return {"days": days}
 
     # ----------------------------------------------------- privacy admin --
@@ -362,7 +458,8 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
     @app.post("/api/privacy/rules")
     def privacy_rules_add(rule: PrivacyRuleIn):
         if rule.kind not in ("exclude", "redact"):
-            raise HTTPException(400, {"error": "bad_kind", "message": "kind must be exclude or redact"})
+            raise BadInput("bad_kind", "kind must be exclude or redact")
+        _validate_rule(rule.match_type, rule.pattern, PRIVACY_MATCH_TYPES)
         rid = db.execute(
             "INSERT INTO privacy_rules(kind, match_type, pattern, enabled) VALUES (?, ?, ?, ?)",
             (rule.kind, rule.match_type, rule.pattern, int(rule.enabled)),
@@ -419,6 +516,11 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         return JSONResponse(payload, headers={"Content-Disposition": "attachment; filename=funes-export.json"})
 
     # --------------------------------------------------- classify admin --
+    def _validate_classify(rule: ClassifyRuleIn) -> None:
+        _validate_rule(rule.match_type, rule.pattern, CLASSIFY_MATCH_TYPES)
+        if rule.category not in CATEGORIES:
+            raise BadInput("bad_category", f"category must be one of {', '.join(CATEGORIES)}.")
+
     @app.get("/api/classify/rules")
     def classify_rules_get():
         rows = db.query("SELECT * FROM classify_rules ORDER BY order_idx ASC")
@@ -426,6 +528,7 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
 
     @app.post("/api/classify/rules")
     def classify_rules_add(rule: ClassifyRuleIn):
+        _validate_classify(rule)
         max_order = db.query_one("SELECT COALESCE(MAX(order_idx), -1) m FROM classify_rules")["m"]
         rid = db.execute(
             "INSERT INTO classify_rules(order_idx, match_type, pattern, category, project, enabled) VALUES (?, ?, ?, ?, ?, ?)",
@@ -435,6 +538,7 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
 
     @app.put("/api/classify/rules/{rule_id}")
     def classify_rules_update(rule_id: int, rule: ClassifyRuleIn):
+        _validate_classify(rule)
         db.execute(
             "UPDATE classify_rules SET match_type=?, pattern=?, category=?, project=?, enabled=? WHERE id=?",
             (rule.match_type, rule.pattern, rule.category, rule.project, int(rule.enabled), rule_id),
@@ -454,6 +558,7 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
 
     @app.post("/api/classify/preview")
     def classify_preview(rule: ClassifyRuleIn):
+        _validate_classify(rule)
         candidate = ClassifyRule(id=-1, order_idx=-1, match_type=rule.match_type, pattern=rule.pattern, category=rule.category, project=rule.project, enabled=True)
         rows = db.query("SELECT id, app, exe, title, category, project FROM spans WHERE kind='active'")
         changed = 0
@@ -471,8 +576,7 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
                 ClassifyRule(id=r["id"], order_idx=r["order_idx"], match_type=r["match_type"], pattern=r["pattern"], category=r["category"], project=r["project"], enabled=bool(r["enabled"]))
                 for r in db.query("SELECT * FROM classify_rules ORDER BY order_idx ASC")
             ]
-            repo_rows = db.query("SELECT path FROM commit_repos WHERE enabled = 1")
-            repos = [Path(r["path"]).name for r in repo_rows]
+            repos = _known_repo_names(db)
             new_version = int(db.get_meta("rules_version", "1")) + 1
             total = len(rows)
             for i, r in enumerate(rows):
@@ -514,6 +618,16 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
         )
         return {"id": rid}
 
+    @app.get("/api/commit-authors")
+    def commit_authors_get():
+        return {"authors": configured_authors(db)}
+
+    @app.put("/api/commit-authors")
+    def commit_authors_put(body: CommitAuthorsIn):
+        cleaned = [a.strip().replace(",", " ") for a in body.authors if a.strip()]
+        db.set_meta("commit_authors", ",".join(cleaned))
+        return {"authors": cleaned}
+
     @app.delete("/api/commit-repos/{repo_id}")
     def commit_repos_delete(repo_id: int):
         db.execute("DELETE FROM commit_repos WHERE id = ?", (repo_id,))
@@ -521,16 +635,25 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
 
     # --------------------------------------------------------------- SPA --
     if static_dir is not None and Path(static_dir).is_dir():
-        app.mount("/assets", StaticFiles(directory=str(Path(static_dir) / "assets")), name="assets")
-        index_file = Path(static_dir) / "index.html"
+        root = Path(static_dir).resolve()
+        if (root / "assets").is_dir():
+            app.mount("/assets", StaticFiles(directory=str(root / "assets")), name="assets")
+        index_file = root / "index.html"
 
-        @app.get("/{full_path:path}")
+        @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):
-            if full_path.startswith("api/"):
-                raise HTTPException(404)
-            requested = Path(static_dir) / full_path
-            if full_path and requested.is_file():
-                return FileResponse(requested)
+            if full_path == "api" or full_path.startswith("api/"):
+                raise HTTPException(404, {"error": "not_found", "message": f"No API route /{full_path}."})
+            if full_path:
+                # The decoded path can be absolute ("//etc/passwd",
+                # "/C:/Windows/...") or climb out with "..": resolve it and
+                # only serve files that are really inside the build folder.
+                try:
+                    candidate = (root / full_path).resolve()
+                except (OSError, ValueError):
+                    candidate = None
+                if candidate is not None and candidate.is_relative_to(root) and candidate.is_file():
+                    return FileResponse(candidate)
             return FileResponse(index_file)
     else:
         @app.get("/")

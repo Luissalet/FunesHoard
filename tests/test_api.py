@@ -28,7 +28,8 @@ def test_agent_activity_now(client):
 
 
 def test_agent_activity_summary_today(client):
-    r = client.post("/api/agent/activity_summary", json={"day": "today"})
+    # "yesterday" always holds a full synthetic day, whatever time the suite runs
+    r = client.post("/api/agent/activity_summary", json={"day": "yesterday"})
     assert r.status_code == 200
     body = r.json()
     assert body["active_s"] > 0
@@ -55,7 +56,7 @@ def test_agent_calls_are_logged_for_audit(client):
 def test_agent_bad_time_returns_400_not_500(client):
     r = client.post("/api/agent/activity_timeline", json={"start": "not-a-real-date!!"})
     assert r.status_code == 400
-    assert r.json()["detail"]["error"] == "bad_time"
+    assert r.json()["error"] == "bad_time"
 
 
 def test_agent_api_has_no_rules_or_delete_or_export_endpoints(client):
@@ -127,3 +128,71 @@ def test_delete_range_two_step_is_the_only_way_to_wipe(client):
     r = client.post("/api/privacy/delete-range", json={"start": span["start"] - 1, "end": span["end"] + 1})
     assert r.status_code == 200
     assert r.json()["deleted"]["spans"] >= 1
+
+
+# --- agent output shape (what a small local model actually reads) --------
+import re as _re
+
+ISO_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
+
+
+def test_agent_times_are_local_iso_with_offset(client):
+    body = client.post("/api/agent/activity_timeline", json={"start": "-3d", "limit": 3}).json()
+    assert ISO_RE.match(body["start"]) and ISO_RE.match(body["items"][0]["start"])
+    assert "human" in body["items"][0]
+    # the UI keeps epoch seconds
+    ui = client.get("/api/timeline", params={"day": "today", "limit": 3}).json()
+    assert isinstance(ui["start"], float)
+
+
+def test_agent_summary_group_by_is_honoured_and_validated(client):
+    by_project = client.post("/api/agent/activity_summary", json={"day": "ayer", "group_by": "project"}).json()
+    assert "by_project" in by_project and "by_category" not in by_project and "by_app" not in by_project
+    assert by_project["active_human"].endswith("min")
+    bad = client.post("/api/agent/activity_summary", json={"group_by": "colour"})
+    assert bad.status_code == 400 and bad.json()["error"] == "bad_group_by"
+    ui = client.get("/api/summary", params={"day": "today"}).json()
+    assert {"by_category", "by_app", "by_project"} <= set(ui)
+
+
+def test_agent_timeline_offset_paginates(client):
+    first = client.post("/api/agent/activity_timeline", json={"start": "-3d", "limit": 2, "min_minutes": 0}).json()
+    assert first["has_more"] and first["next_offset"] == 2
+    second = client.post("/api/agent/activity_timeline", json={"start": "-3d", "limit": 2, "min_minutes": 0, "offset": 2}).json()
+    assert {i["id"] for i in first["items"]}.isdisjoint({i["id"] for i in second["items"]})
+
+
+def test_ui_timeline_for_yesterday_is_exactly_yesterday(client):
+    from datetime import datetime, timedelta
+
+    body = client.get("/api/timeline", params={"day": "yesterday", "min_minutes": 0}).json()
+    start = datetime.fromtimestamp(body["start"])
+    assert start.time().hour == 0 and body["end"] - body["start"] in (82800, 86400, 90000)
+    assert start.date() == datetime.now().date() - timedelta(days=1)
+    assert all(body["start"] <= i["start"] <= i["end"] <= body["end"] for i in body["items"])
+
+
+def test_agent_where_was_i_has_titles_and_distinct_contexts(client):
+    body = client.post("/api/agent/activity_where_was_i", json={"before": "yesterday", "contexts": 5}).json()
+    keys = [c["project"] or c["app"] for c in body["contexts"]]
+    assert len(keys) == len(set(keys)) and keys
+    assert all(c["title"] for c in body["contexts"])
+
+
+def test_agent_search_since_a_day_word_means_from_its_midnight(client):
+    body = client.post("/api/agent/activity_search", json={"query": "Visual Studio Code", "since": "yesterday", "limit": 50}).json()
+    assert body["items"], "since=yesterday must mean from yesterday 00:00, not from 24 h ago this second"
+    assert all(i["when"].startswith(("today", "yesterday")) for i in body["items"])
+    assert any(i["when"].startswith("yesterday 09:") for i in body["items"])
+
+
+def test_activity_now_reports_nothing_as_current_while_paused(client):
+    client.post("/api/privacy/pause", json={"minutes": 30})
+    body = client.post("/api/agent/activity_now", json={}).json()
+    assert body["paused"] is True and body["app"] is None and ISO_RE.match(body["paused_until"])
+
+
+def test_commit_authors_round_trip(client):
+    r = client.put("/api/commit-authors", json={"authors": ["Luissalet", " alex@example.com "]})
+    assert r.json()["authors"] == ["Luissalet", "alex@example.com"]
+    assert client.get("/api/commit-authors").json()["authors"] == ["Luissalet", "alex@example.com"]

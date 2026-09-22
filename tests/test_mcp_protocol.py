@@ -3,6 +3,7 @@ subprocess over stdio (as Faustus would) against a real running app, and
 drive it through the MCP client protocol -- not by importing the adapter's
 functions directly.
 """
+import json
 import socket
 import sys
 import threading
@@ -78,8 +79,35 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
             text = result.content[0].text
             assert "active_s" in text or "by_category" in text
 
-            result2 = await session.call_tool("activity_where_was_i", {"contexts": 2})
+            result2 = await session.call_tool("activity_where_was_i", {"contexts": 2, "before": "ayer"})
             assert result2.isError is not True
+            payload = json.loads(result2.content[0].text)
+            assert 1 <= len(payload["contexts"]) <= 2
+            assert payload["contexts"][0]["title"]
+            assert "+" in payload["before"] or "-" in payload["before"][19:]  # local ISO with offset
+
+            for tool in tools.tools:
+                assert "Keywords:" in (tool.description or ""), tool.name
+                assert tool.annotations is not None and tool.annotations.openWorldHint is False
+                assert tool.annotations.destructiveHint is False
+
+            hits = await session.call_tool("activity_search", {"query": "funes-hoard OR \"", "limit": 3})
+            assert hits.isError is not True
+
+            bad = await session.call_tool("activity_timeline", {"start": "next blursday"})
+            assert bad.isError is True
+            assert "bad_time: cannot parse time" in bad.content[0].text
+            assert "yesterday/ayer" in bad.content[0].text
+
+            paused = await session.call_tool("activity_pause", {"minutes": 30})
+            assert json.loads(paused.content[0].text)["paused"] is True
+            again = await session.call_tool("activity_pause", {"minutes": 5})
+            assert "already paused" in json.loads(again.content[0].text)["note"]
+
+    import httpx
+
+    calls = httpx.get(f"http://127.0.0.1:{port}/api/agent-calls").json()["items"]
+    assert {"activity_summary", "activity_where_was_i", "activity_pause"} <= {c["tool"] for c in calls}
 
 
 @pytest.mark.asyncio
