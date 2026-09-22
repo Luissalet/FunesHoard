@@ -55,8 +55,10 @@ def day_totals(spans: List[SpanRow]) -> Dict[str, object]:
         if s.project:
             by_project[s.project] = by_project.get(s.project, 0.0) + s.duration_s
 
-    first_activity = min((s.start_ts for s in spans), default=None)
-    last_activity = max((s.end_ts for s in spans), default=None)
+    # Away/locked time is not activity: a day that ends with the screen
+    # locked overnight must not report its last activity at 23:59.
+    first_activity = min((s.start_ts for s in active), default=None)
+    last_activity = max((s.end_ts for s in active), default=None)
 
     return {
         "active_s": active_time,

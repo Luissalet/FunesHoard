@@ -196,3 +196,15 @@ def test_commit_authors_round_trip(client):
     r = client.put("/api/commit-authors", json={"authors": ["Luissalet", " alex@example.com "]})
     assert r.json()["authors"] == ["Luissalet", "alex@example.com"]
     assert client.get("/api/commit-authors").json()["authors"] == ["Luissalet", "alex@example.com"]
+
+
+def test_ui_search_uses_markers_that_cannot_collide_with_title_brackets(client):
+    items = client.get("/api/search", params={"query": "DuckDB"}).json()["items"]
+    assert items and "\u0002DuckDB\u0003" in items[0]["text"]
+    agent = client.post("/api/agent/activity_search", json={"query": "DuckDB"}).json()["items"]
+    assert "[DuckDB]" in agent[0]["text"]
+
+
+def test_ui_recent_commits(client):
+    items = client.get("/api/commits", params={"since": "-7d"}).json()["items"]
+    assert items and {"repo", "sha", "subject"} <= set(items[0])

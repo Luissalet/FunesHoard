@@ -177,3 +177,13 @@ def test_clip_spans_to_window():
     clipped = clip_spans(spans, T0, T0 + 3600)
     assert [(s.start_ts - T0, s.end_ts - T0) for s in clipped] == [(0, 1800), (1800, 3600)]
     assert spans[0].start_ts == T0 - 3600  # inputs untouched
+
+
+def test_first_and_last_activity_ignore_away_and_locked_time():
+    spans = [
+        span(1, 0, 600, kind="locked", app="LockApp.exe", project=None, category="System"),
+        span(2, 600, 1200),
+        span(3, 1200, 5000, kind="away", app="unknown", project=None, category="Other"),
+    ]
+    totals = day_totals(spans)
+    assert totals["first_activity"] == T0 + 600 and totals["last_activity"] == T0 + 1200

@@ -432,7 +432,11 @@ def create_app(data_dir: Path, static_dir: Optional[Path] = None, demo: bool = F
 
     @app.get("/api/search")
     def ui_search(query: str, since: Optional[str] = None, until: Optional[str] = None, limit: int = 30):
-        return queries.activity_search(db, query, since, until, limit)
+        return queries.activity_search(db, query, since, until, limit, marks=("\u0002", "\u0003"))
+
+    @app.get("/api/commits")
+    def ui_commits(since: Optional[str] = None, limit: int = 50):
+        return queries.recent_commits(db, since, limit)
 
     @app.get("/api/recent-files")
     def ui_recent_files(since: Optional[str] = None, limit: int = 50):

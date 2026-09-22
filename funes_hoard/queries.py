@@ -213,7 +213,13 @@ def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def activity_search(db: Database, query: str, since: Optional[str], until: Optional[str], limit: int, now: Optional[float] = None) -> dict:
+def activity_search(
+    db: Database, query: str, since: Optional[str], until: Optional[str], limit: int,
+    now: Optional[float] = None, marks: tuple = ("[", "]"),
+) -> dict:
+    """`marks` wrap the matched words in the snippet: readable brackets for
+    the model; the UI asks for control characters that cannot collide with
+    brackets that are really in a title."""
     now = now if now is not None else time.time()
     query = (query or "").strip()
     if not _TOKEN_RE.search(query):
@@ -224,9 +230,9 @@ def activity_search(db: Database, query: str, since: Optional[str], until: Optio
     items: List[dict] = []
     if getattr(db, "fts_available", False):
         rows = db.query(
-            "SELECT source, ref_id, ts, text, snippet(search_fts, 0, '[', ']', '...', 12) AS snip"
+            "SELECT source, ref_id, ts, text, snippet(search_fts, 0, ?, ?, '...', 12) AS snip"
             " FROM search_fts WHERE search_fts MATCH ? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?",
-            (fts_match_expression(query), since_ts, until_ts, limit + 1),
+            (marks[0], marks[1], fts_match_expression(query), since_ts, until_ts, limit + 1),
         )
         for r in rows:
             items.append({"source": r["source"], "ref_id": r["ref_id"], "ts": r["ts"],
@@ -246,6 +252,18 @@ def activity_search(db: Database, query: str, since: Optional[str], until: Optio
                           "when": human_moment(r["ts"], now), "text": r["text"]})
     truncated = len(items) > limit
     return {"query": query, "items": items[:limit], "truncated": truncated, "has_more": truncated}
+
+
+def recent_commits(db: Database, since: Optional[str], limit: int, now: Optional[float] = None) -> dict:
+    now = now if now is not None else time.time()
+    since_ts = parse_moment(since, now, "start") if since else now - 30 * 86400.0
+    limit = max(1, min(limit, MAX_LIMIT))
+    rows = db.query("SELECT * FROM commits WHERE ts >= ? ORDER BY ts DESC LIMIT ?", (since_ts, limit + 1))
+    items = [
+        {"id": r["id"], "ts": r["ts"], "repo": r["repo"], "sha": r["sha"][:10], "subject": r["subject"], "author": r["author"]}
+        for r in rows[:limit]
+    ]
+    return {"items": items, "truncated": len(rows) > limit, "has_more": len(rows) > limit}
 
 
 def activity_recent_files(db: Database, since: Optional[str], limit: int, now: Optional[float] = None) -> dict:
