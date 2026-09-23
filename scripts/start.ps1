@@ -62,7 +62,8 @@ if (-not (Test-Path -LiteralPath $Python)) {
 
 $Lock = Join-Path $RepoRoot "requirements-lock.txt"
 $Stamp = Join-Path $Venv ".lock-sha256"
-$LockHash = (Get-FileHash -LiteralPath $Lock -Algorithm SHA256).Hash
+# SHA-256 through .NET: Get-FileHash is missing when Windows PowerShell is started from PowerShell 7.
+$LockHash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes($Lock))).Replace('-', '')
 $Installed = if (Test-Path -LiteralPath $Stamp) { (Get-Content -LiteralPath $Stamp -Raw).Trim() } else { "" }
 if ($Installed -ne $LockHash) {
     Write-Host "Installing pinned dependencies ..."
