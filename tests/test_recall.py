@@ -1,6 +1,7 @@
 """recall/recall_search: merging Funes's own spans with fake Argus/Echo/Scribe
 sources over an in-process httpx.MockTransport (grant/deny/timeout), citation
 format, unavailable-source reporting and the REST/agent surface."""
+import json
 import time
 
 import httpx
@@ -212,7 +213,9 @@ def api_client(demo_data_dir):
         yield c
 
 
-def test_api_recall_endpoint_never_fails_when_sources_are_down(api_client):
+def test_api_recall_endpoint_never_fails_when_sources_are_down(api_client, monkeypatch):
+    # Closed ports, whatever is running on the developer's machine.
+    monkeypatch.setenv("FUNES_SOURCES", json.dumps([{"id": i, "base_url": "http://127.0.0.1:1"} for i in ("argus", "echo", "scribe")]))
     r = api_client.get("/api/recall", params={"window": 30})
     assert r.status_code == 200
     body = r.json()

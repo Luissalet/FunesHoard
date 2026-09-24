@@ -110,9 +110,11 @@ async def test_check_health_reports_unreachable_on_connect_error(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_call_source_tool_needs_a_token(tmp_path):
+async def test_call_source_tool_needs_a_token(tmp_path, monkeypatch):
+    # The real sibling app may be running on this machine: point at a token that does not exist.
+    monkeypatch.setenv("FUNES_SOURCES", json.dumps([{"id": "argus", "token_path": str(tmp_path / "no-token")}]))
     reg = SourceRegistry(tmp_path)
-    source = reg.get("argus")  # points at a token file that does not exist in tmp_path
+    source = reg.get("argus")
     with pytest.raises(SourceCallError) as exc_info:
         await call_source_tool(source, "screen_status", {})
     assert exc_info.value.reason == "no_token"
