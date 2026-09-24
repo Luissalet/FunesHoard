@@ -54,6 +54,9 @@ def _handler_for(argus_frames=None, echo_clips=None, scribe_sessions=None, scrib
             if host in deny:
                 return httpx.Response(200, json={"service": host, "status": "ok"})
             return httpx.Response(200, json={"service": host.split(".")[0], "status": "ok"})
+        if request.url.path.startswith("/api/apps/"):
+            # The Hoard Hub proxy Funes falls back to: not part of this fixture.
+            return httpx.Response(401, json={"error": "no hub here"})
         assert request.url.path == "/api/agent/call"
         if host in deny:
             return httpx.Response(401, json={"error": "unauthorized"})
@@ -265,3 +268,33 @@ def test_agent_recall_bad_time_is_a_clear_400(api_client):
     r = api_client.post("/api/agent/recall", json={"at": "not a real time!!"})
     assert r.status_code == 400
     assert r.json()["error"] == "bad_time"
+
+
+def test_recall_falls_back_to_the_hub_proxy_when_the_direct_route_refuses(db, registry, tmp_path, monkeypatch):
+    """A sibling that rotated its token (a Node app restarts with a new one)
+    refuses the direct call; the same tool then goes through the hub, which
+    holds every app's token, with Funes's own token."""
+    from funes_hoard.hoard_link import family
+    own = tmp_path / "mcp-token"
+    own.write_text("funes-own-token", encoding="utf-8")
+    family.configure("funes", str(tmp_path), hub="http://hub.test")
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.host, request.url.path, request.headers.get("authorization")))
+        if request.url.path == "/api/health":
+            return httpx.Response(200, json={"service": request.url.host.split(".")[0]})
+        if request.url.path == "/api/agent/call":
+            return httpx.Response(401, json={"error": "stale token"})
+        if request.url.host == "hub.test" and request.url.path == "/api/apps/echo/call":
+            assert request.headers["authorization"] == "Bearer funes-own-token"
+            return httpx.Response(200, json={"ok": True, "app": "echo", "tool": "clip_recent",
+                                             "result": {"clips": [{"id": 57, "last_seen_at": NOW - 60, "kind": "text", "preview": "via hub"}]}})
+        return httpx.Response(401, json={"error": "no"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = _run(recall(db, registry, at=None, now=NOW, http_client=client, sources=["echo"]))
+    assert any(h == "hub.test" for h, _, _ in seen)
+    reasons = {u["id"]: u["reason"] for u in result["summary"]["unavailable"]}
+    assert "echo" not in reasons
+    assert any(i["source"] == "echo" for i in result["items"])

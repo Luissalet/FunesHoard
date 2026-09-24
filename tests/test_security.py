@@ -88,13 +88,29 @@ def test_agent_surface_is_exactly_the_eleven_tools(client):
     agent_paths = sorted(
         {getattr(r, "path", "") for r in client.app.routes if getattr(r, "path", "").startswith("/api/agent/")}
     )
+    # The eleven tools, plus the two routes of the shared family contract
+    # (the catalogue and the token-guarded dispatcher over those eleven).
     assert agent_paths == sorted(
-        f"/api/agent/{t}" for t in (
+        [f"/api/agent/{t}" for t in (
             "activity_now", "activity_where_was_i", "activity_timeline", "activity_summary",
             "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
             "recall", "recall_search", "sources_status",
-        )
+        )] + ["/api/agent/tools", "/api/agent/call"]
     )
+
+
+def test_shared_contract_dispatches_the_same_tools(client, tmp_path):
+    cat = client.get("/api/agent/tools").json()
+    names = {t["name"] for t in cat["tools"]}
+    assert "recall" in names and "activity_now" in names and len(names) == 11
+    assert client.post("/api/agent/call", json={"name": "activity_now", "arguments": {}}).status_code == 401
+    from funes_hoard.hoard_link import family
+    token = open(family.status()["token_file"], encoding="utf-8").read().strip()
+    r = client.post("/api/agent/call", json={"name": "activity_now", "arguments": {}},
+                    headers={"Authorization": "Bearer " + token})
+    assert r.status_code == 200, r.text
+    r = client.post("/api/agent/call", json={"name": "nope"}, headers={"Authorization": "Bearer " + token})
+    assert r.status_code == 404
 
 
 def test_agent_pause_can_never_shorten_a_human_pause(client):

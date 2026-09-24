@@ -1,12 +1,5 @@
-Vendored from HoardLink (https://github.com/Luissalet/HoardLink), version 0.1.1
+Vendored from HoardLink (https://github.com/Luissalet/HoardLink), version 0.4.0
 
-Do not edit; replace the whole folder with a byte-identical copy of that
-version to update.
-
-Funes's Hoard talks to Hoard Link only through funes_hoard/backend.py,
-which loads backend.json + environment into a LinkConfig for this app and
-builds the "Write my day" prompt, without editing any vendored file. When
-re-vendoring a later HoardLink version, drop in the new files here and
-re-run `pytest tests/test_backend.py` to confirm the wrapper still lines
-up with the public API (Link, LinkConfig, CapabilityConfig, Resolution,
-Unavailable, BackendError).
+Byte-identical copy of the upstream hoard_link/ package (every .py file except the
+hub/ subpackage, which only the hub itself runs) plus its LICENSE. Do not edit these
+files; run scripts/sync_vendored.py in the HoardLink repository to update every copy.

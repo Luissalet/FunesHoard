@@ -113,6 +113,9 @@ async def test_check_health_reports_unreachable_on_connect_error(tmp_path):
 async def test_call_source_tool_needs_a_token(tmp_path, monkeypatch):
     # The real sibling app may be running on this machine: point at a token that does not exist.
     monkeypatch.setenv("FUNES_SOURCES", json.dumps([{"id": "argus", "token_path": str(tmp_path / "no-token")}]))
+    # ...and no hub to fall back to either (the real one may be running here).
+    from funes_hoard.hoard_link import family
+    monkeypatch.setattr(family, "_hub", lambda: "http://127.0.0.1:1")
     reg = SourceRegistry(tmp_path)
     source = reg.get("argus")
     with pytest.raises(SourceCallError) as exc_info:

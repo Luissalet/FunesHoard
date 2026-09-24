@@ -32,6 +32,7 @@ from funes_hoard.db import Database
 from funes_hoard.errors import BadInput
 from funes_hoard.git_watch import GitCommitsPoller, configured_authors
 from funes_hoard.hoard_link import BackendError, Link, Unavailable
+from funes_hoard.hoard_link import family
 from funes_hoard.jobs import JobManager
 from funes_hoard.recall import recall as run_recall
 from funes_hoard.recall import recall_search as run_recall_search
@@ -394,7 +395,8 @@ def create_app(
             "name": DISPLAY_NAME,
             "version": __version__,
             "status": "ok",
-            "recording": not collector.is_paused(),
+            "recording": not collector.is_paused(),            "hoard_link": family.health_block(),
+
             "spans": span_count,
             "demo": demo,
         }
@@ -990,5 +992,13 @@ def create_app(
                 "and restart the app.</p></body></html>",
                 media_type="text/html",
             )
+
+    # The family contract (Hoard Link 0.4): the shared GET /api/agent/tools +
+    # POST /api/agent/call over the per-tool routes above (which stay as they
+    # are), a bearer token in data/mcp-token, and one agent.call event per
+    # call on the hub's bus. Descriptions come from mcp_server.py's docstrings
+    # so the two catalogues never disagree.
+    family.install_fastapi(app, "funes", str(data_dir),
+                           mcp_source=str(Path(__file__).with_name("mcp_server.py")))
 
     return app

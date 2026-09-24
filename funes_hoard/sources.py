@@ -216,16 +216,60 @@ async def check_health(source: Source, client: Optional[httpx.AsyncClient] = Non
             await active.aclose()
 
 
+async def _call_via_hub(
+    source: Source, tool: str, arguments: dict, active: httpx.AsyncClient, timeout: float, reason: str,
+) -> dict:
+    """The Hoard Hub proxy (`POST /api/apps/<id>/call`): the hub holds every
+    sibling's token, Funes only presents its own. Used when the direct
+    route cannot work (no readable token, refused token, nothing at the
+    configured URL) — so a moved app or a Node app that rotated its token
+    on restart still answers. Raises the *original* reason when the hub is
+    not there either."""
+    from .hoard_link import family
+
+    own = family.status().get("token_file") or ""
+    try:
+        own_token = Path(own).read_text(encoding="utf-8").strip() if own else ""
+    except OSError:
+        own_token = ""
+    if not own_token:
+        raise SourceCallError(reason)
+    hub = family._hub()
+    try:
+        resp = await active.post(
+            f"{hub}/api/apps/{source.id}/call",
+            json={"tool": tool, "arguments": arguments, "timeout_s": timeout},
+            headers={"Authorization": f"Bearer {own_token}"},
+            timeout=timeout + 2.0,
+        )
+    except httpx.HTTPError as exc:
+        raise SourceCallError(reason) from exc
+    if resp.status_code == 401:
+        raise SourceCallError("unauthorized")
+    try:
+        body = resp.json()
+    except ValueError:
+        raise SourceCallError(f"http_{resp.status_code}")
+    if resp.status_code >= 400 or not isinstance(body, dict) or not body.get("ok", True):
+        err = (body or {}).get("error", "") if isinstance(body, dict) else ""
+        raise SourceCallError("unreachable" if "not reachable" in str(err) else f"http_{resp.status_code}")
+    return body.get("result", body)
+
+
 async def call_source_tool(
     source: Source, tool: str, arguments: dict, client: Optional[httpx.AsyncClient] = None, timeout: float = DEFAULT_TIMEOUT,
 ) -> dict:
     if not source.enabled:
         raise SourceCallError("disabled")
     token = source.read_token()
-    if not token:
-        raise SourceCallError("no_token")
     owns_client = client is None
     active = client or httpx.AsyncClient(timeout=timeout)
+    if not token:
+        try:
+            return await _call_via_hub(source, tool, arguments, active, timeout, "no_token")
+        finally:
+            if owns_client:
+                await active.aclose()
     try:
         resp = await active.post(
             f"{source.base_url}/api/agent/call",
@@ -234,14 +278,14 @@ async def call_source_tool(
             timeout=timeout,
         )
         if resp.status_code == 401:
-            raise SourceCallError("unauthorized")
+            return await _call_via_hub(source, tool, arguments, active, timeout, "unauthorized")
         if resp.status_code >= 400:
             raise SourceCallError(f"http_{resp.status_code}")
         return resp.json()
     except httpx.TimeoutException as exc:
         raise SourceCallError("timeout") from exc
-    except httpx.HTTPError as exc:
-        raise SourceCallError("unreachable") from exc
+    except httpx.HTTPError:
+        return await _call_via_hub(source, tool, arguments, active, timeout, "unreachable")
     finally:
         if owns_client:
             await active.aclose()

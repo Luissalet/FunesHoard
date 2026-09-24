@@ -27,7 +27,12 @@ def _free_port() -> int:
 
 
 @pytest.fixture()
-def live_app(demo_data_dir):
+def live_app(demo_data_dir, monkeypatch):
+    # Hermetic: on the developer's machine the sibling apps ARE running (and
+    # their token files exist), so point the federated sources at a closed port.
+    import json as _json
+    monkeypatch.setenv("FUNES_SOURCES", _json.dumps([{"id": i, "base_url": "http://127.0.0.1:1"} for i in ("argus", "echo", "scribe")]))
+    monkeypatch.setenv("HOARD_HUB_URL", "http://127.0.0.1:1")  # and no hub proxy to fall back to
     port = _free_port()
     app = create_app(demo_data_dir, None, demo=True, port=port)
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
