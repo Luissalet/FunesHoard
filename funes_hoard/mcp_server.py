@@ -219,7 +219,7 @@ def activity_pause(minutes: float = 15) -> dict:
 def recall(
     at: Optional[str] = None, window_minutes: float = 15, sources: Optional[list[str]] = None, limit_per_source: int = 20,
 ) -> dict:
-    """What was I doing at a given time, across screen, clipboard, audio and PC / qué hacía a esa hora.
+    """What was I doing at a time: screen, clipboard, audio and PC in one call / qué estaba haciendo a esa hora.
     Merged, time-sorted timeline around `at` +/- `window_minutes` (default 15
     both ways), built from Funes's own episodes plus Argus (screen), Echo
     (clipboard) and Scribe (audio). Each item has a short `citation` in
@@ -232,7 +232,7 @@ def recall(
     minutos", "ayer por la tarde", a weekday name, or an ISO date/datetime.
     `sources`, when given, limits the fan-out to those ids (e.g. ["argus"]).
     Call this FIRST for "what was I doing / qué hacía / qué pasó a las X".
-    Keywords: what was I doing, timeline, recall, screen, clipboard, audio, at that time, around then, qué hacía, qué pasó, a esa hora, línea de tiempo, pantalla, portapapeles, audio.
+    Keywords: what was I doing, what was on screen, what did I copy, timeline, recall, screen, clipboard, audio, at that time, around then, with citations, qué estaba haciendo, qué hacía, qué pasó, qué había en pantalla, qué copié, a esa hora, a las, de la madrugada, esta mañana, ayer, línea de tiempo, pantalla, portapapeles, audio, con citas.
     """
     return _post(
         "/api/agent/recall",
