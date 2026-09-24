@@ -10,7 +10,7 @@ behaviour below is defined in `funes_hoard/queries.py` and `funes_hoard/api.py`.
 ## Contract
 
 - **Read-only except `activity_pause`.** The agent surface is exactly the
-  eight routes below (a test enumerates the app's routes). The pause can
+  eleven routes below (a test enumerates the app's routes). The pause can
   only *extend* a pause: it cannot resume recording, shorten a pause the
   human set, or turn "pause until resumed" into a timed pause. Rules,
   deletion, retention and export exist only in the UI.
@@ -187,6 +187,65 @@ resumes by itself when the pause ends.
 ```json
 {"paused": true, "until": "2026-09-22T21:40:00+02:00", "until_resumed": false,
  "note": "recording paused for 30 min; it resumes by itself"}
+```
+
+### recall(at=None, window_minutes=15, sources=None, limit_per_source=20)
+
+**Call this first for "what was I doing / qué hacía / qué pasó a las X".**
+Merges Funes's own episodes with the other local Hoard apps -- Argus
+(screen OCR), Echo (clipboard) and Scribe (audio transcripts) -- around
+`at` (default now) +/- `window_minutes` into one time-sorted list. Each
+item is `{time, source, kind, text, citation, ref}`: `citation` is a short
+bracket tag to quote verbatim (`[argus:moment 88 16:02]`, `[echo:clip
+512]`, `[scribe:seg 17 16:04]`, `[funes:episode 4131 16:00]`), `ref` holds
+the ids needed to open it with that source's own tools for more detail. A
+source that cannot answer (not running, wrong token, timed out) is never
+fatal: it is listed in `summary.unavailable` with a short reason and the
+rest of the timeline still comes back. `sources` restricts the fan-out to
+those ids (`["argus", "echo"]`); see [RECALL.md](RECALL.md) for the full
+citation format and how to add a source.
+
+```json
+{"at": "2026-09-22T16:00:00+02:00", "window_minutes": 15,
+ "start": "2026-09-22T15:45:00+02:00", "end": "2026-09-22T16:15:00+02:00",
+ "items": [
+   {"time": "2026-09-22T16:02:00+02:00", "source": "argus", "kind": "moment",
+    "text": "Weather.app — 22C, partly cloudy", "citation": "[argus:moment 88 16:02]",
+    "ref": {"id": 88, "app": "Weather.app", "window_title": "Weather"}},
+   {"time": "2026-09-22T16:00:00+02:00", "source": "funes", "kind": "episode",
+    "text": "Code.exe: main.py - Atlas - Visual Studio Code", "citation": "[funes:episode 4131 16:00]",
+    "ref": {"id": 4131, "start": "2026-09-22T15:55:00+02:00", "end": "2026-09-22T16:05:00+02:00", "app": "Code.exe", "project": "Atlas"}}],
+ "summary": {"counts": {"funes": 1, "argus": 1, "echo": 0, "scribe": 0}, "total": 2,
+             "unavailable": [{"id": "scribe", "name": "Scribe's Hoard", "reason": "unreachable"}]}}
+```
+
+### recall_search(query, since=None, until=None, sources=None, limit_per_source=20)
+
+The same merge as `recall`, but a text search across a range (default: the
+last 7 days) instead of a moment. `since`/`until` accept the same day words
+and ISO dates as `activity_search`. Prefer `recall` when the question names
+a time instead of a topic.
+
+```json
+{"query": "invoice", "since": "2026-09-18T00:00:00+02:00", "until": "2026-09-22T21:10:19+02:00",
+ "items": [{"time": "2026-09-22T09:00:00+02:00", "source": "argus", "kind": "moment",
+            "text": "Invoice #114 — total due", "citation": "[argus:moment 3 09:00]",
+            "ref": {"id": 3, "app": "chrome"}}],
+ "summary": {"counts": {"funes": 0, "argus": 1, "echo": 0, "scribe": 0}, "total": 1, "unavailable": []}}
+```
+
+### sources_status()
+
+Health of every federated source: id, name, base URL, enabled, `ok` and a
+short `reason` when not. Call it when `recall`/`recall_search` reports a
+source unavailable and the user asks why.
+
+```json
+{"sources": [
+  {"id": "argus", "name": "Argus's Hoard", "base_url": "http://127.0.0.1:5183", "enabled": true,
+   "ok": true, "reason": null, "detail": {"service": "argus-hoard", "status": "ok"}},
+  {"id": "scribe", "name": "Scribe's Hoard", "base_url": "http://127.0.0.1:5185", "enabled": true,
+   "ok": false, "reason": "unreachable", "detail": null}]}
 ```
 
 ## Errors

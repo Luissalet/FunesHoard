@@ -181,6 +181,51 @@ export interface BackendConfigPatch {
   capabilities?: Record<string, { url?: string; model?: string }>;
 }
 
+export interface RecallItem {
+  time: string | null;
+  source: string;
+  kind: string;
+  text: string;
+  citation: string;
+  ref: Record<string, unknown>;
+}
+
+export interface RecallUnavailable {
+  id: string;
+  name: string;
+  reason: string;
+}
+
+export interface RecallResponse {
+  at?: string;
+  query?: string;
+  window_minutes?: number;
+  start?: string;
+  end?: string;
+  since?: string;
+  until?: string;
+  items: RecallItem[];
+  summary: { counts: Record<string, number>; total: number; unavailable: RecallUnavailable[] };
+}
+
+export interface SourceItem {
+  id: string;
+  name: string;
+  base_url: string;
+  token_path: string;
+  enabled: boolean;
+}
+
+export interface SourceHealthItem {
+  id: string;
+  name: string;
+  base_url: string;
+  enabled: boolean;
+  ok: boolean;
+  reason: string | null;
+  detail: Record<string, unknown> | null;
+}
+
 export interface DayNarrative {
   day: string;
   text: string | null;
@@ -283,6 +328,15 @@ export const api = {
   setWriteMyDaySetting: (enabled: boolean) => req<{ enabled: boolean }>("PUT", "/api/settings/write-my-day", { enabled }),
   meetingsAwaySetting: () => req<{ minutes: number }>("GET", "/api/settings/meetings-away"),
   setMeetingsAwaySetting: (minutes: number) => req<{ minutes: number }>("PUT", "/api/settings/meetings-away", { minutes }),
+
+  recall: (params: { at?: string; window?: number; sources?: string; limit_per_source?: number }) =>
+    req<RecallResponse>("GET", `/api/recall${qs(params)}`),
+  recallSearch: (query: string, params: { since?: string; until?: string; sources?: string; limit_per_source?: number }) =>
+    req<RecallResponse>("GET", `/api/recall/search${qs({ query, ...params })}`),
+  sources: () => req<{ items: SourceItem[] }>("GET", "/api/sources"),
+  updateSource: (id: string, patch: Partial<Pick<SourceItem, "base_url" | "enabled" | "name" | "token_path">>) =>
+    req<SourceItem>("PUT", `/api/sources/${encodeURIComponent(id)}`, patch),
+  sourcesHealth: () => req<{ sources: SourceHealthItem[] }>("GET", "/api/sources/health"),
 };
 
 export function formatDuration(seconds: number): string {

@@ -33,9 +33,13 @@ from funes_hoard.errors import BadInput
 from funes_hoard.git_watch import GitCommitsPoller, configured_authors
 from funes_hoard.hoard_link import BackendError, Link, Unavailable
 from funes_hoard.jobs import JobManager
+from funes_hoard.recall import recall as run_recall
+from funes_hoard.recall import recall_search as run_recall_search
+from funes_hoard.recall import sources_status as run_sources_status
 from funes_hoard.recent_files import RecentFilesPoller, windows_recent_dir
 from funes_hoard.retention import delete_range, run_retention
 from funes_hoard.scheduler import BackgroundScheduler
+from funes_hoard.sources import SourceRegistry
 from funes_hoard.timeparse import parse_day_or_range
 
 SERVICE = "funes-hoard"
@@ -196,10 +200,33 @@ class MeetingsAwaySettingIn(BaseModel):
     minutes: float = Field(ge=5, le=180)
 
 
+class RecallArgs(BaseModel):
+    at: Optional[str] = None
+    window_minutes: float = Field(default=15, ge=1, le=24 * 60)
+    sources: Optional[list[str]] = None
+    limit_per_source: int = Field(default=20, ge=1, le=100)
+
+
+class RecallSearchArgs(BaseModel):
+    query: str
+    since: Optional[str] = None
+    until: Optional[str] = None
+    sources: Optional[list[str]] = None
+    limit_per_source: int = Field(default=20, ge=1, le=100)
+
+
+class SourcePatchIn(BaseModel):
+    name: Optional[str] = None
+    base_url: Optional[str] = None
+    token_path: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 AGENT_TOOLS = (
     "activity_now", "activity_where_was_i", "activity_timeline", "activity_summary",
     "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
+    "recall", "recall_search", "sources_status",
 )
 PRIVACY_MATCH_TYPES = ("app", "title_regex")
 CLASSIFY_MATCH_TYPES = ("app", "title_regex", "domain")
@@ -261,6 +288,7 @@ def create_app(
     data_dir = Path(data_dir)
     _setup_logging(data_dir)
     db = Database(data_dir)
+    sources_registry = SourceRegistry(data_dir)
     link_factory = link_factory or Link
     if link is None:
         link = link_factory(backend.load_link_config(data_dir))
@@ -302,6 +330,7 @@ def create_app(
     app.state.demo = demo
     app.state.link = link
     app.state.link_factory = link_factory
+    app.state.sources_registry = sources_registry
 
     # ------------------------------------------------------------ guard --
     @app.middleware("http")
@@ -394,6 +423,23 @@ def create_app(
         _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, True, None)
         return result
 
+    async def run_agent_async(tool: str, args_summary: str, coro):
+        started = time.perf_counter()
+        try:
+            result = queries.agent_view(await coro)
+        except BadInput as exc:
+            _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, False, exc.message)
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.getLogger("funes_hoard.api").exception("agent tool %s failed", tool)
+            _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, False, type(exc).__name__)
+            raise HTTPException(status_code=500, detail={
+                "error": "internal_error",
+                "message": f"{tool} failed unexpectedly ({type(exc).__name__}); details are in the app log.",
+            })
+        _log_agent_call(tool, args_summary, (time.perf_counter() - started) * 1000, True, None)
+        return result
+
     def _args(**kwargs) -> str:
         """Compact, human-readable audit summary: only the arguments given."""
         return " ".join(f"{k}={v!r}" for k, v in kwargs.items() if v is not None) or "(defaults)"
@@ -463,6 +509,25 @@ def create_app(
 
         return run_agent("activity_pause", _args(minutes=args.minutes), _do)
 
+    @app.post("/api/agent/recall")
+    async def agent_recall(args: RecallArgs):
+        return await run_agent_async(
+            "recall", _args(at=args.at, window_minutes=args.window_minutes, sources=args.sources, limit_per_source=args.limit_per_source),
+            run_recall(db, sources_registry, args.at, args.window_minutes, args.sources, args.limit_per_source),
+        )
+
+    @app.post("/api/agent/recall_search")
+    async def agent_recall_search(args: RecallSearchArgs):
+        return await run_agent_async(
+            "recall_search",
+            _args(query=args.query, since=args.since, until=args.until, sources=args.sources, limit_per_source=args.limit_per_source),
+            run_recall_search(db, sources_registry, args.query, args.since, args.until, args.sources, args.limit_per_source),
+        )
+
+    @app.post("/api/agent/sources_status")
+    async def agent_sources_status():
+        return await run_agent_async("sources_status", "(no arguments)", run_sources_status(sources_registry))
+
     # --------------------------------------------------------- UI routes --
     @app.get("/api/status")
     def status():
@@ -527,6 +592,35 @@ def create_app(
             day_str = d.isoformat()
             days.append({"date": day_str, **queries.activity_summary(db, day_str, None, None, "all")})
         return {"days": days}
+
+    # --------------------------------------------------------- recall --
+    @app.get("/api/recall")
+    async def ui_recall(
+        at: Optional[str] = None, window: float = 15, sources: Optional[str] = None, limit_per_source: int = 20,
+    ):
+        wanted = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
+        return await run_recall(db, sources_registry, at, window, wanted, limit_per_source)
+
+    @app.get("/api/recall/search")
+    async def ui_recall_search(
+        query: str, since: Optional[str] = None, until: Optional[str] = None,
+        sources: Optional[str] = None, limit_per_source: int = 20,
+    ):
+        wanted = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
+        return await run_recall_search(db, sources_registry, query, since, until, wanted, limit_per_source)
+
+    @app.get("/api/sources")
+    def ui_sources_get():
+        return {"items": [s.to_dict() for s in sources_registry.list()]}
+
+    @app.put("/api/sources/{source_id}")
+    def ui_sources_put(source_id: str, patch: SourcePatchIn):
+        updated = sources_registry.save_patch(source_id, patch.model_dump(exclude_unset=True))
+        return updated.to_dict()
+
+    @app.get("/api/sources/health")
+    async def ui_sources_health():
+        return await run_sources_status(sources_registry)
 
     # -------------------------------------------------- model backend --
     def _write_my_day_enabled() -> bool:

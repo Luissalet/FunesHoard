@@ -10,11 +10,13 @@ import { RulesView } from "./components/RulesView";
 import { PrivacyView } from "./components/PrivacyView";
 import { AssistantActivityView } from "./components/AssistantActivityView";
 import { SettingsView } from "./components/SettingsView";
+import { RecallTimelineView } from "./components/RecallTimelineView";
 import { api, isoDay, type StatusInfo } from "./api";
 import { detectLang, STRINGS, type Lang } from "./i18n";
 
 const TITLES: Record<ViewId, keyof typeof STRINGS["en"]> = {
   today: "nav_today",
+  timeline: "nav_timeline",
   week: "nav_week",
   search: "nav_search",
   projects: "nav_projects",
@@ -121,6 +123,7 @@ export default function App() {
               onNavigate={(d, at) => navigate({ view: "today", day: d === today && !at ? undefined : d, at })}
             />
           )}
+          {view === "timeline" && <RecallTimelineView lang={lang} />}
           {view === "week" && <WeekView lang={lang} />}
           {view === "search" && (
             <SearchView lang={lang} onOpenMoment={(d, at) => navigate({ view: "today", day: d, at })} />

@@ -23,6 +23,8 @@ funes_hoard/
   jobs.py           tiny in-memory job runner (reclassify, retention-now)
   db.py             sqlite3 (WAL), one shared connection, schema + seeding
   queries.py        read functions shared by the UI API and the agent API
+  sources.py        registry of federated Hoard sources (Argus/Echo/Scribe) + health/call
+  recall.py         merges Funes's own episodes with federated sources into one timeline
   timeparse.py      date-word / relative-offset parsing (hoy/ayer/-2h/...), ISO output
   errors.py         BadInput: {error, message} 400s raised from the query layer
   demo.py           --demo synthetic data, built by driving the real Collector
@@ -174,12 +176,26 @@ shutdown), and builds the prompt for the one feature that needs a model.
   for tests (`tests/fakes.py::FakeLink`): the suite never makes a real
   network call.
 
+## Federated recall
+
+`funes_hoard/sources.py` + `funes_hoard/recall.py` turn Funes into the
+single timeline of the day, merging its own spans with the other local
+Hoard apps -- Argus (screen), Echo (clipboard) and Scribe (audio) -- see
+[docs/RECALL.md](RECALL.md) for the citation format and how it works. Funes
+never opens another app's database or files: it calls that app's own
+`/api/agent/call` (family contract) over loopback with that app's own
+`data/mcp-token`, with a 3 s per-source timeout and a parallel fan-out
+(`asyncio.gather`). A source that is down, unauthorized or slow is caught
+as `sources.SourceCallError` and reported in `summary.unavailable`, never
+raised past `recall`/`recall_search` -- the REST and agent routes for it
+therefore never 5xx because a sibling app happens to be closed.
+
 ## Decisions worth explaining
 
 - **Agent surface is a fixed set of HTTP endpoints, not general SQL.** The
   `/api/agent/<tool>` routes are individually declared FastAPI routes,
   nothing under that prefix can reach the rules or privacy tables --
-  verified by `tests/test_security.py::test_agent_surface_is_exactly_the_eight_tools`.
+  verified by `tests/test_security.py::test_agent_surface_is_exactly_the_eleven_tools`.
 - **The agent's pause can only extend.** `Collector.pause_at_least` keeps a
   longer or indefinite pause as it is, so the one write the agent has can
   never amount to resuming early.

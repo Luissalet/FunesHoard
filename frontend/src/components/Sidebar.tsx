@@ -3,6 +3,7 @@ import {
   CalendarDays,
   FolderKanban,
   ListChecks,
+  Radar,
   Search,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -13,10 +14,12 @@ import type { Lang } from "../i18n";
 import { STRINGS } from "../i18n";
 import { formatClock, type StatusInfo } from "../api";
 
-export type ViewId = "today" | "week" | "search" | "projects" | "files" | "rules" | "privacy" | "assistant" | "settings";
+export type ViewId =
+  | "today" | "week" | "search" | "projects" | "files" | "rules" | "privacy" | "assistant" | "settings" | "timeline";
 
 const ITEMS: { id: ViewId; icon: typeof Clock; key: keyof typeof STRINGS["en"] }[] = [
   { id: "today", icon: Clock, key: "nav_today" },
+  { id: "timeline", icon: Radar, key: "nav_timeline" },
   { id: "week", icon: CalendarDays, key: "nav_week" },
   { id: "search", icon: Search, key: "nav_search" },
   { id: "projects", icon: FolderKanban, key: "nav_projects" },

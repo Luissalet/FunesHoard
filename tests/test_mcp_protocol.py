@@ -68,6 +68,7 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
                 "activity_now", "activity_where_was_i", "activity_timeline",
                 "activity_summary", "activity_search", "activity_recent_files",
                 "activity_projects", "activity_pause",
+                "recall", "recall_search", "sources_status",
             }
             pause_tool = next(t for t in tools.tools if t.name == "activity_pause")
             assert pause_tool.annotations.readOnlyHint is False
@@ -109,6 +110,17 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
             assert json.loads(paused.content[0].text)["paused"] is True
             again = await session.call_tool("activity_pause", {"minutes": 5})
             assert "already paused" in json.loads(again.content[0].text)["note"]
+
+            # Federated tools: never fail even though no sibling app is running.
+            merged = await session.call_tool("recall", {"window_minutes": 30})
+            assert merged.isError is not True
+            merged_payload = json.loads(merged.content[0].text)
+            assert "items" in merged_payload and "summary" in merged_payload
+            assert merged_payload["summary"]["unavailable"]
+
+            status = await session.call_tool("sources_status", {})
+            assert status.isError is not True
+            assert {s["id"] for s in json.loads(status.content[0].text)["sources"]} == {"argus", "echo", "scribe"}
 
     import httpx
 

@@ -60,7 +60,8 @@ contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 | Conocimiento derivado | Totales por día, semana o rango, por categoría, aplicación y proyecto, recortados en los bordes del periodo; primera y última actividad; cambios de contexto (>= 10 s); bloques de concentración (>= 25 min, cada interrupción <= 2 min); "dónde estaba" con contextos distintos (primero el trabajo; sin música, chats ni juegos salvo que se pida), sus últimos títulos, archivos (primero los del propio proyecto) y commits | La concentración se mide por tiempo en ventana; no dice nada de la atención real |
 | Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
 | Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera; un resultado de ventana dice cuánto tiempo estuvo abierta y, en la interfaz, abre su día en ese momento | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
-| API del agente | Ocho herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; los ids y las horas se encadenan de una llamada a la siguiente (`activity_timeline(around=<ts de un resultado>)`); todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
+| API del agente | Once herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; los ids y las horas se encadenan de una llamada a la siguiente (`activity_timeline(around=<ts de un resultado>)`); todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
+| Recall | `recall`/`recall_search` combinan los propios episodios de Funes con las demás apps Hoard locales -- Argus (pantalla), Echo (portapapeles), Scribe (audio) -- en una única línea de tiempo ordenada y citable (`[argus:moment 88 16:02]`); una fuente que no está en marcha aparece como `unavailable`, nunca rompe la llamada ([docs/RECALL.md](docs/RECALL.md)) | Necesita las apps hermanas en marcha y accesibles por loopback; Funes solo llama a su API de agente de solo lectura, nunca a sus archivos directamente |
 | Modelos compartidos | "Escribe mi día": una narración breve del día en segunda persona ("You spent the morning on..."; el modelo recibe las instrucciones en inglés y suele responder en inglés), guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un servidor Ollama, llama.cpp u otro compatible con OpenAI que ya esté en marcha); un día sin nada registrado se rechaza sin llamar al modelo |
 | Interfaz | Hoy (línea de tiempo con zoom en la que se ven la ausencia y el bloqueo, leyenda, detalle fijado, tramos accesibles con el teclado, "¿Dónde lo dejé?" y "Escribe mi día"), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Ajustes (Modelos), Actividad del asistente; cada día y cada momento tienen su propia dirección (recargar y Atrás funcionan); español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
 
@@ -80,6 +81,12 @@ principio a fin como persona en el navegador y como modelo local por MCP
   tres últimos contextos de trabajo (proyecto, últimos títulos, archivos,
   commits), así que el último archivo del viernes se ve antes de elegir un
   día; un clic fija ese momento en la línea de tiempo de su día.
+- **"Faustus, ¿qué estaba haciendo a las 16:00?"**: una sola llamada a
+  `recall` combina el historial de ventanas de Funes con lo que había en
+  pantalla (Argus), lo que se copió (Echo) y lo que se dijo en una llamada
+  (Scribe) alrededor de ese momento, cada resultado con una cita breve para
+  responder citándola; si una fuente no está en marcha, aparece como no
+  disponible y el resto de la respuesta llega igual.
 - **"Faustus, ¿dónde lo dejé ayer?"**: una sola llamada a
   `activity_where_was_i`, unos 500 tokens, responde con el proyecto, la
   ventana y el título del editor que nombra el archivo, sin contar la música
@@ -182,10 +189,14 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | `activity_recent_files` | Archivos abiertos hace poco | sí |
 | `activity_projects` | Tiempo por proyecto, última vez y commits | sí |
 | `activity_pause` | Pausar la grabación; nunca acorta una pausa ya puesta | **no** (la única escritura) |
+| `recall` | "Qué estaba haciendo a las X" combinado entre Funes, Argus, Echo y Scribe, con una cita breve por resultado | sí |
+| `recall_search` | La misma combinación, pero busca texto en un rango en vez de un momento | sí |
+| `sources_status` | Estado de cada fuente combinada (en marcha, accesible, token aceptado) | sí |
 
 Funciona con cualquier cliente MCP por stdio; en [docs/MCP.md](docs/MCP.md)
 están la salida de cada herramienta, los códigos de error y un ejemplo de
-configuración.
+configuración, y en [docs/RECALL.md](docs/RECALL.md) se explican las
+herramientas `recall` combinadas y el formato de cita al completo.
 
 ## Modelos compartidos (HoardLink)
 
@@ -254,7 +265,7 @@ aplicación. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Desarrollo
 
 ```bash
-.venv/bin/python -m pytest tests/ -q    # 271 pasan, sin red, en 15-30 s
+.venv/bin/python -m pytest tests/ -q    # 300+ pasan, sin red, en 15-30 s
 cd frontend && npm ci && npm run build  # 0 errores de TypeScript
 ```
 

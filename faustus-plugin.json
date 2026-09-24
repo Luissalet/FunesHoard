@@ -2,8 +2,8 @@
   "schema": 1,
   "id": "funes",
   "name": "Funes's Hoard",
-  "purpose": "Gives the assistant a read-only, privacy-filtered memory of what the user was doing on this computer: app, window, files, commits, over time.",
-  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search"],
+  "purpose": "Gives the assistant a read-only, privacy-filtered memory of what the user was doing on this computer: app, window, files, commits, over time. Also federates the other local Hoard apps (screen, clipboard, audio) into one merged, citable timeline.",
+  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search", "federated recall (screen, clipboard, audio)"],
   "placeholders": ["FUNES_DIR", "APP_URL"],
   "defaults": {"APP_URL": "http://127.0.0.1:8813"},
   "app": {
@@ -27,5 +27,5 @@
     "optional_env": []
   },
   "provides": {"skills": ["skills/where-was-i/SKILL.md"]},
-  "notes": "Local episodic memory: foreground app/window, idle/away, files opened and commits made, with privacy rules applied before storage. Read-only for the assistant except pausing recording, and a pause from the assistant never shortens one you set."
+  "notes": "Local episodic memory: foreground app/window, idle/away, files opened and commits made, with privacy rules applied before storage. Read-only for the assistant except pausing recording, and a pause from the assistant never shortens one you set. Federates: when the sibling apps Argus's Hoard (screen), Echo's Hoard (clipboard) and Scribe's Hoard (audio) are running on this machine, the recall/recall_search tools merge their local history with Funes's own into one time-sorted, citable timeline (docs/RECALL.md); a source that is not running is reported as unavailable, never fatal. Funes never reads those apps' data directly -- only their own read-only agent APIs, over loopback."
 }

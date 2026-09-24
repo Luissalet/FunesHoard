@@ -55,7 +55,8 @@ and gives the assistant eight small tools to ask for them.
 | Derived knowledge | Day, week and range totals by category/app/project, clipped at the window edges; first/last activity; context switches (>= 10 s dwell); focus blocks (>= 25 min, each interruption <= 2 min); "where was I" with distinct contexts (work first; music, chat and games left out unless asked), their recent titles, files (the project's own first) and commits | Focus is measured from window time only; it says nothing about attention |
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
 | Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing; a window hit says how long it was open and, in the interface, opens its day at that moment | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
-| Agent API | Eight tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
+| Agent API | Eleven tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
+| Recall | `recall`/`recall_search` merge Funes's own episodes with the other local Hoard apps -- Argus (screen), Echo (clipboard), Scribe (audio) -- into one time-sorted, citable timeline (`[argus:moment 88 16:02]`); a source that is not running is reported `unavailable`, never fatal ([docs/RECALL.md](docs/RECALL.md)) | Needs the sibling apps running and reachable on loopback; Funes calls only their own read-only agent API, never their files directly |
 | Shared models | "Write my day": a cached, regenerable short narrative of a day ("You spent the morning on..."), from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama, llama.cpp or other OpenAI-compatible server); a day with nothing recorded is refused without calling the model |
 | Interface | Today (zoomable timeline with away and locked time drawn, legend, pinned details, keyboard-focusable segments, Where was I?, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; every day and moment has its own address (reload and Back work); English/Spanish; light/dark | Desktop layout; not designed for phones |
 
@@ -75,6 +76,11 @@ as a person in the browser and as a local model over MCP
   three work contexts before now (project, last titles, files, commits), so
   Friday's last file is on screen before you pick a day; one click pins that
   moment in its day's timeline.
+- **"Faustus, ¿qué estaba haciendo a las 16:00?"**: one `recall` call merges
+  Funes's own window history with what was on screen (Argus), what was
+  copied (Echo) and what was said in a call (Scribe) around that moment,
+  each item with a short citation to quote back; a source that is not
+  running just shows up as unavailable, the rest of the answer still comes.
 - **"Faustus, ¿dónde lo dejé ayer?"**: one `activity_where_was_i` call,
   about 500 tokens, answers with the project, the window and the editor
   title that names the file, skipping the music player and the chat.
@@ -171,9 +177,14 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | `activity_recent_files` | Recently opened files | yes |
 | `activity_projects` | Time per project, last touched, commits | yes |
 | `activity_pause` | Pause recording; never shortens an existing pause | **no** (the only write) |
+| `recall` | "What was I doing at time X" merged across Funes, Argus, Echo and Scribe, with a short citation per item | yes |
+| `recall_search` | The same merge, but a text search across a range instead of a moment | yes |
+| `sources_status` | Health of every federated source (running, reachable, token accepted) | yes |
 
 It works with any MCP client over stdio; [docs/MCP.md](docs/MCP.md) has the
-output of every tool, the error codes and a config snippet.
+output of every tool, the error codes and a config snippet, and
+[docs/RECALL.md](docs/RECALL.md) explains the federated `recall` tools and
+citation format in full.
 
 ## Shared models (HoardLink)
 
@@ -199,6 +210,9 @@ flowchart LR
   MCP -->|"/api/agent/*"| API
   API --> DB
   API -->|"Write my day"| Link["HoardLink: shared language model"]
+  API -->|"recall: /api/agent/call"| Argus["Argus's Hoard (screen)"]
+  API -->|"recall: /api/agent/call"| Echo["Echo's Hoard (clipboard)"]
+  API -->|"recall: /api/agent/call"| Scribe["Scribe's Hoard (audio)"]
 ```
 
 FastAPI, one collector thread sampling once a second, one scheduler thread
@@ -236,7 +250,7 @@ HTTP to the app. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q    # 271 passed, offline, about 15-30 s
+.venv/bin/python -m pytest tests/ -q    # 300+ passed, offline, about 15-30 s
 cd frontend && npm ci && npm run build  # 0 TypeScript errors
 ```
 
