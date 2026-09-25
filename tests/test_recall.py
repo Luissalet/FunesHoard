@@ -258,6 +258,14 @@ def test_agent_recall_tool_is_audited(api_client):
     assert calls[0]["tool"] == "recall"
 
 
+def test_agent_recall_now_also_says_what_is_in_the_foreground(api_client):
+    now = api_client.post("/api/agent/recall", json={"at": "ahora", "window_minutes": 10}).json()
+    assert "now" in now and "paused_until" in now["now"]
+    assert "now" in api_client.post("/api/agent/recall", json={}).json()
+    past = api_client.post("/api/agent/recall", json={"at": "hace 30 minutos"}).json()
+    assert "now" not in past
+
+
 def test_agent_sources_status_tool(api_client):
     r = api_client.post("/api/agent/sources_status", json={})
     assert r.status_code == 200

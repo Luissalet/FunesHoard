@@ -43,6 +43,14 @@ from funes_hoard.scheduler import BackgroundScheduler
 from funes_hoard.sources import SourceRegistry
 from funes_hoard.timeparse import parse_day_or_range
 
+_NOW_WORDS = {"", "now", "right now", "ahora", "ahora mismo", "en este momento", "actual", "current"}
+
+
+def _means_now(at: Optional[str]) -> bool:
+    """recall(at=...) aimed at this moment: no `at`, or a word for now."""
+    return at is None or str(at).strip().lower() in _NOW_WORDS
+
+
 SERVICE = "funes-hoard"
 PID_FILE = "funes.pid"
 DISPLAY_NAME = "Funes's Hoard"
@@ -513,9 +521,20 @@ def create_app(
 
     @app.post("/api/agent/recall")
     async def agent_recall(args: RecallArgs):
+        async def _recall_with_now():
+            out = await run_recall(db, sources_registry, args.at, args.window_minutes, args.sources, args.limit_per_source)
+            # «¿Qué estoy haciendo ahora?» answered through recall: the current window is still
+            # open, so no finished episode covers it yet. Say what is in the foreground too.
+            if _means_now(args.at) and isinstance(out, dict):
+                try:
+                    out["now"] = queries.activity_now(db, collector)
+                except Exception:  # noqa: BLE001 - the timeline still answers without it
+                    pass
+            return out
+
         return await run_agent_async(
             "recall", _args(at=args.at, window_minutes=args.window_minutes, sources=args.sources, limit_per_source=args.limit_per_source),
-            run_recall(db, sources_registry, args.at, args.window_minutes, args.sources, args.limit_per_source),
+            _recall_with_now(),
         )
 
     @app.post("/api/agent/recall_search")

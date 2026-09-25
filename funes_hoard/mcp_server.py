@@ -248,6 +248,9 @@ def recall(
     minutos", "ayer por la tarde", a weekday name, or an ISO date/datetime.
     `sources`, when given, limits the fan-out to those ids (e.g. ["argus"]).
     Call this FIRST for "what was I doing / qué hacía / qué pasó a las X".
+    With `at` omitted or now/ahora the result also carries `now`: the
+    foreground app and window right now (the same as activity_now), since
+    the window still open has no finished episode in the timeline yet.
     Keywords: what was I doing, what was on screen, what did I copy, timeline, recall, screen, clipboard, audio, at that time, around then, with citations, qué estaba haciendo, qué hacía, qué pasó, qué había en pantalla, qué copié, a esa hora, a las, de la madrugada, esta mañana, ayer, línea de tiempo, pantalla, portapapeles, audio, con citas.
     """
     return _post(
