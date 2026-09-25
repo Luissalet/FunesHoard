@@ -92,7 +92,9 @@ _READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint
 
 @mcp.tool(annotations=_READ)
 def activity_now() -> dict:
-    """What the user is doing right now: the foreground app, window title,
+    """What the user is doing right now: app, window, project, idle time. Qué estoy haciendo ahora.
+
+    What the user is doing right now: the foreground app, window title,
     category and project, how long it has been open (`since`), idle seconds,
     and whether recording is on or paused (`paused_until`). While paused no
     current window is reported. Use it for "what am I doing?" or "are you
@@ -104,7 +106,9 @@ def activity_now() -> dict:
 
 @mcp.tool(annotations=_READ)
 def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_categories: bool = False) -> dict:
-    """Resume context: the last distinct things the user worked on before a
+    """Where was I: the last things worked on before a moment, to resume. Por dónde iba, retomar.
+
+    Resume context: the last distinct things the user worked on before a
     moment, most recent first, a context with a known project ranked ahead
     of a bare app name. Each context has its last window title (and up to 3
     `recent_titles`: the editor title naming the file is often the one just
@@ -125,7 +129,9 @@ def activity_timeline(
     start: Optional[str] = None, end: Optional[str] = None, min_minutes: Optional[float] = None,
     limit: int = 20, offset: int = 0, around: Optional[str] = None,
 ) -> dict:
-    """Chronological list of activity spans (one window/app at a time, or
+    """Timeline of the windows and apps used in a range, with durations. Cronología, qué hice hoy.
+
+    Chronological list of activity spans (one window/app at a time, or
     away/locked) for a range, each with a stable `id`, app, title, category,
     project, duration and a `human` time range. Default range: today. A
     single day word or date in `start` (e.g. "ayer", "2026-09-20") selects
@@ -148,7 +154,9 @@ def activity_timeline(
 def activity_summary(
     day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, group_by: str = "category",
 ) -> dict:
-    """Time totals for a day, week or range: active and away time (seconds
+    """Time totals per category, app or project for a day, week or range. Cuánto tiempo, resumen del día.
+
+    Time totals for a day, week or range: active and away time (seconds
     plus `active_human`), totals grouped by `group_by` = "category" | "app" |
     "project" | "all" as both seconds (`by_*`) and ready-to-read strings
     (`by_*_human`), first/last activity, number of context switches and
@@ -163,7 +171,9 @@ def activity_summary(
 
 @mcp.tool(annotations=_READ)
 def activity_search(query: str, since: Optional[str] = None, until: Optional[str] = None, limit: int = 10) -> dict:
-    """Find when a window title, opened file path or commit subject containing
+    """When did a window title, file or commit mention these words. Buscar en mi actividad, cuándo abrí.
+
+    Find when a window title, opened file path or commit subject containing
     the words in `query` appeared, newest first. Word prefixes count ("duck"
     finds "DuckDB") and punctuation is ignored. All words must match; if none
     do, any word is tried and `matched` says "any word". Each hit has
@@ -181,7 +191,9 @@ def activity_search(query: str, since: Optional[str] = None, until: Optional[str
 
 @mcp.tool(annotations=_READ)
 def activity_recent_files(since: Optional[str] = None, limit: int = 15) -> dict:
-    """Files the user opened recently (from the Windows Recent Items list),
+    """Files opened recently, newest first, with full paths. Archivos recientes, qué abrí.
+
+    Files the user opened recently (from the Windows Recent Items list),
     newest first, each with its full path, `when` and file extension
     (`app_hint`). Default window: the last 7 days. `limit` max 100.
     Keywords: recent files, what file did I open, last opened document, which file was I editing, archivos recientes, qué archivo abrí, que archivo abri, último documento, documento abierto.
@@ -191,7 +203,9 @@ def activity_recent_files(since: Optional[str] = None, limit: int = 15) -> dict:
 
 @mcp.tool(annotations=_READ)
 def activity_projects(since: Optional[str] = None, limit: int = 10) -> dict:
-    """Projects ranked by time spent since a moment (default: last 30 days):
+    """Projects ranked by time spent and commits since a moment. En qué proyectos he trabajado.
+
+    Projects ranked by time spent since a moment (default: last 30 days):
     active time (`time_human`), when each was last touched, and how many git
     commits were recorded for it. Projects come from editor window titles
     and known git repo names. `limit` max 100.
@@ -204,7 +218,9 @@ def activity_projects(since: Optional[str] = None, limit: int = 10) -> dict:
     annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def activity_pause(minutes: float = 15) -> dict:
-    """Pause activity recording for `minutes` (1-1440, default 15), e.g. when
+    """Pause activity recording for some minutes (write; only when asked). Pausar registro, no me grabes.
+
+    Pause activity recording for `minutes` (1-1440, default 15), e.g. when
     the user asks not to be tracked for a while. It only ever extends a
     pause: if recording is already paused for longer (or until the user
     resumes), nothing changes and `note` says so. It cannot resume early,
