@@ -50,7 +50,6 @@ export function Sidebar({
         </div>
         <div className="brand-text">
           <h1>{t.appName}</h1>
-          <p>{t.tagline}</p>
         </div>
       </div>
       <nav className="nav">
