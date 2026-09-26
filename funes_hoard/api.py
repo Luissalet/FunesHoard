@@ -731,7 +731,7 @@ def create_app(
         try:
             result = await app.state.link.chat(
                 backend.build_narrative_messages(summary), capability="llm",
-                max_tokens=backend.NARRATIVE_MAX_TOKENS, temperature=0.4,
+                max_tokens=backend.NARRATIVE_MAX_TOKENS, temperature=0.4, effort="high",
             )
         except Unavailable as exc:
             reasons = "; ".join(exc.reasons) if exc.reasons else "no reason recorded"
