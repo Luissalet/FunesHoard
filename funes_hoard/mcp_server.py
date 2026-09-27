@@ -352,7 +352,7 @@ def scribe_status() -> dict:
 @mcp.tool(annotations=_READ)
 def scribe_sessions(q: Optional[str] = None, kind: Optional[str] = None, tag: Optional[str] = None,
                     from_: Optional[str] = None, to: Optional[str] = None, limit: int = 20) -> dict:
-    """List meetings, interviews and voice notes with title, date and first line. Lista de sesiones."""
+    """List meetings, interviews and voice notes with title, date and first line; read scribe_transcript for content."""
     return _audio_call("scribe_sessions", {"q": q, "kind": kind, "tag": tag, "from": from_, "to": to, "limit": limit})
 
 
@@ -366,7 +366,7 @@ def scribe_transcript(session_id: str, from_s: Optional[float] = None, to_s: Opt
 @mcp.tool(annotations=_READ)
 def scribe_search(q: str, kind: Optional[str] = None, from_: Optional[str] = None,
                   to: Optional[str] = None, limit: int = 40) -> dict:
-    """Search transcript text across all audio sessions; returns timestamped hits."""
+    """Find timestamped transcript hits across sessions; read scribe_transcript for context before summarising."""
     return _audio_call("scribe_search", {"q": q, "kind": kind, "from": from_, "to": to, "limit": limit})
 
 

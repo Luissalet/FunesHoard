@@ -1,9 +1,9 @@
 """Registry of federated Hoard sources `recall.py` can pull a timeline from.
 
-A source is one sibling app that exposes the family contract (`GET
+A source exposes the family contract (`GET
 /api/health`, `GET /api/agent/tools`, `POST /api/agent/call` with a Bearer
-token read from `<app>/data/mcp-token`). Defaults point at the well-known
-sibling folders and ports documented in the project brief; they can be
+token read from `<app>/data/mcp-token`). Argus and Echo use sibling folders;
+the stable `scribe` source id points at Funes audio in this process. Sources can be
 overridden per-field by `data/sources.json` (persisted from `/api/sources`)
 and, on top of that, by the `FUNES_SOURCES` environment variable (a JSON
 list of `{id, name, base_url, token_path, enabled}` patches) -- handy for
@@ -27,11 +27,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_TIMEOUT = 3.0  # seconds: short per-source budget for a parallel fan-out
 
-# id -> (sibling folder name on the user's machine, default port)
+# id -> (external sibling folder name on the user's machine, default port)
 _DEFAULTS: tuple[tuple[str, str, int], ...] = (
     ("argus", "Argus's Hoard", 5183),
     ("echo", "Echo's Hoard", 5188),
-    ("scribe", "Scribe's Hoard", 5185),
 )
 
 
@@ -80,12 +79,12 @@ def default_sources(data_dir: Optional[Path] = None, app_port: Optional[int] = N
         Source(id=sid, name=folder, base_url=_default_base_url(folder, port), token_path=_default_token_path(folder))
         for sid, folder, port in _DEFAULTS
     ]
-    if data_dir is not None:
-        # Audio now runs inside Funes on the same port, with its own agent token.
-        sources[-1] = Source(
-            id="scribe", name="Funes audio", base_url=f"http://127.0.0.1:{app_port or 8813}/audio",
-            token_path=str(Path(data_dir) / "audio" / "mcp-token"),
-        )
+    # Keep the stable source id for old citations and stored references.
+    audio_dir = Path(data_dir) if data_dir is not None else REPO_ROOT / "data"
+    sources.append(Source(
+        id="scribe", name="Funes audio", base_url=f"http://127.0.0.1:{app_port or 8813}/audio",
+        token_path=str(audio_dir / "audio" / "mcp-token"),
+    ))
     return sources
 
 

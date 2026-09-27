@@ -13,7 +13,8 @@ def test_default_sources_have_the_well_known_ids_and_ports():
     ids = {s.id: s for s in default_sources()}
     assert ids["argus"].base_url == "http://127.0.0.1:5183"
     assert ids["echo"].base_url == "http://127.0.0.1:5188"
-    assert ids["scribe"].base_url == "http://127.0.0.1:5185"
+    assert ids["scribe"].base_url == "http://127.0.0.1:8813/audio"
+    assert ids["scribe"].token_path.endswith("audio\\mcp-token") or ids["scribe"].token_path.endswith("audio/mcp-token")
     assert all(s.enabled for s in ids.values())
 
 
