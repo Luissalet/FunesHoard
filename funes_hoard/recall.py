@@ -367,6 +367,7 @@ async def recall(
         "window_minutes": window_minutes,
         "start": iso_local(start_ts),
         "end": iso_local(end_ts),
+        "evidence_note": "Funes episode titles identify foreground windows, not edits, commands, intent or causes.",
         "items": items,
         "summary": {"counts": counts, "total": len(items), "unavailable": unavailable},
     }

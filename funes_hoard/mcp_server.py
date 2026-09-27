@@ -140,6 +140,9 @@ def activity_timeline(
     Chronological list of activity spans (one window/app at a time, or
     away/locked) for a range, each with a stable `id`, app, title, category,
     project, duration and a `human` time range. Default range: today. A
+    foreground window does not establish that a file was edited, a command
+    was run, or that the activity caused a simultaneous service incident.
+    Do not infer uninterrupted work between sampled spans.
     single day word or date in `start` (e.g. "ayer", "2026-09-20") selects
     that whole day; otherwise start..end (end defaults to now). For "what
     was I doing around then", pass `around` = a search hit's `ts` (or any
@@ -251,7 +254,11 @@ def recall(
     answering, and a `ref` with the ids needed to open it with that source's
     own tools for more detail. `summary.unavailable` lists any source that
     could not answer (down, unauthorized, timed out) with a short reason --
-    never fatal, the rest of the timeline still comes back. `at` accepts the
+    never fatal, the rest of the timeline still comes back.
+    Funes episode titles only identify a foreground window: they do not show
+    edits, commands, intent or the cause of a simultaneous incident. Treat
+    unavailable sources as missing evidence, not as proof of no activity.
+    `at` accepts the
     same words as Funes's own tools: now/ahora, "a las 16:00", "hace 10
     minutos", "ayer por la tarde", a weekday name, or an ISO date/datetime.
     `sources`, when given, limits the fan-out to those ids (e.g. ["argus"]).

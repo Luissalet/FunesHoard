@@ -195,6 +195,7 @@ def activity_timeline(
     return {
         "start": start_ts, "end": end_ts,
         "human_range": human_range(start_ts, end_ts, now),
+        "evidence_note": "Foreground windows only; titles do not prove edits, commands, intent or causes.",
         "total": len(spans),
         "items": [_fmt_span(s, now) for s in page],
         "truncated": has_more, "has_more": has_more,
