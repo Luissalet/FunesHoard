@@ -102,7 +102,7 @@ def activity_now(db: Database, collector) -> dict:
 
 def activity_where_was_i(
     db: Database, before: Optional[str], contexts: int, now: Optional[float] = None,
-    all_categories: bool = False,
+    all_categories: bool = False, agent: bool = False,
 ) -> dict:
     now = now if now is not None else time.time()
     before_ts = min(parse_moment(before, now, "end"), now)
@@ -125,10 +125,11 @@ def activity_where_was_i(
             "SELECT subject, sha FROM commits WHERE ts >= ? AND ts < ? ORDER BY ts DESC LIMIT 5",
             (c.start_ts, c.end_ts),
         )
-        out.append({
+        item = {
             "project": c.project,
             "app": c.app,
             "title": c.title,
+            "title_evidence": "foreground_window_only; editing_and_pending_changes_not_observed",
             "recent_titles": c.recent_titles,
             "start": c.start_ts,
             "end": c.end_ts,
@@ -136,8 +137,22 @@ def activity_where_was_i(
             "human": human_range(c.start_ts, c.end_ts, now),
             "files": files[:5],
             "commits": [{"subject": r["subject"], "sha": r["sha"][:10]} for r in commits],
-        })
-    return {"before": before_ts, "contexts": out}
+        }
+        if agent and not item["commits"]:
+            # An empty list repeatedly led the model to invent pending edits.
+            # The UI keeps its stable array contract; the agent sees commit
+            # evidence only when there is an observed commit to report.
+            item.pop("commits")
+        out.append(item)
+    return {
+        "before": before_ts,
+        "evidence_limit": (
+            "A window title shows what was in the foreground, not whether a file was edited. "
+            "File edits, saves and pending changes are not observed here. Report them only "
+            "when separate evidence explicitly proves them."
+        ),
+        "contexts": out,
+    }
 
 
 AROUND_S = 30 * 60

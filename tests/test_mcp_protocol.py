@@ -79,6 +79,11 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
             assert pause_tool.annotations.readOnlyHint is False
             now_tool = next(t for t in tools.tools if t.name == "activity_now")
             assert now_tool.annotations.readOnlyHint is True
+            resume_tool = next(t for t in tools.tools if t.name == "activity_where_was_i")
+            assert "not that it was edited" in resume_tool.description
+            assert "no recorded commit does not imply" in resume_tool.description
+            projects_tool = next(t for t in tools.tools if t.name == "activity_projects")
+            assert "includes today" in projects_tool.description
 
             result = await session.call_tool("activity_summary", {"day": "today"})
             assert result.isError is not True

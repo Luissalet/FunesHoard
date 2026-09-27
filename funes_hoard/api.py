@@ -463,7 +463,7 @@ def create_app(
     def agent_where_was_i(args: WhereWasIArgs):
         return run_agent(
             "activity_where_was_i", _args(before=args.before, contexts=args.contexts, all_categories=args.all_categories),
-            lambda: queries.activity_where_was_i(db, args.before, args.contexts, all_categories=args.all_categories),
+            lambda: queries.activity_where_was_i(db, args.before, args.contexts, all_categories=args.all_categories, agent=True),
         )
 
     @app.post("/api/agent/activity_timeline")

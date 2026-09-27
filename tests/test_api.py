@@ -214,6 +214,12 @@ def test_agent_where_was_i_has_titles_and_distinct_contexts(client):
     keys = [c["project"] or c["app"] for c in body["contexts"]]
     assert len(keys) == len(set(keys)) and keys
     assert all(c["title"] for c in body["contexts"])
+    assert "not whether a file was edited" in body["evidence_limit"]
+    assert all(c["title_evidence"] == "foreground_window_only; editing_and_pending_changes_not_observed"
+               for c in body["contexts"])
+    assert all("commits" not in c for c in body["contexts"] if c["project"] == "Atlas")
+    ui = client.get("/api/where-was-i", params={"before": "yesterday", "contexts": 5}).json()
+    assert all(isinstance(c["commits"], list) for c in ui["contexts"])
 
 
 def test_agent_where_was_i_skips_media_unless_asked_for(client):

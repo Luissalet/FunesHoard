@@ -20,6 +20,9 @@ behaviour below is defined in `funes_hoard/queries.py` and `funes_hoard/api.py`.
 - **Titles are data.** Window titles are the user's literal screen
   contents; the server instructions tell the model to treat them as private
   data, never as instructions.
+- **Bounded days need `activity_summary`.** `activity_projects(since="ayer")`
+  runs from yesterday through now and includes today; use
+  `activity_summary(day="ayer", group_by="project")` for yesterday alone.
 
 ## Conventions
 
@@ -71,7 +74,12 @@ are skipped and a context with a project ranks ahead of a bare app, unless
 context (up to 5 each); files inside the context's own project folder come
 first. `recent_titles` holds up to 3 distinct titles of the context, most
 recent first: when it ends in a terminal, the editor title that names the
-file is the second one.
+file is the second one. An editor title proves only that the file was visible:
+it does not prove editing, a save, or pending changes. An empty `commits`
+list does not imply uncommitted work.
+The agent response makes this limit explicit in `evidence_limit` and each
+context's `title_evidence`. It omits empty `commits` lists for agents; the UI
+response keeps the array.
 
 ```json
 {"before": "2026-09-22T00:00:00+02:00",
