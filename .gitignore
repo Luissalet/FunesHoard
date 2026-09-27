@@ -6,6 +6,9 @@ data/
 data-*/
 node_modules/
 frontend/dist/
+funes_hoard/audio_memory/static/
+audio_ui/funes_hoard/
+funes_hoard.egg-info/
 *.tsbuildinfo
 *.log
 .env

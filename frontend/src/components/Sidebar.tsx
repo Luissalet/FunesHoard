@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Sparkles,
   Clock,
+  Mic,
 } from "lucide-react";
 import type { Lang } from "../i18n";
 import { STRINGS } from "../i18n";
@@ -63,6 +64,10 @@ export function Sidebar({
             {t[item.key]}
           </button>
         ))}
+        <a className="nav-item" href="/audio/">
+          <Mic size={16} />
+          {lang === "es" ? "Audio y transcripción" : "Audio & transcription"}
+        </a>
       </nav>
       <div className="sidebar-footer">
         {status && (

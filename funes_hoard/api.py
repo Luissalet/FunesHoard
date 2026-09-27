@@ -12,7 +12,7 @@ import os
 import re
 import sys
 import time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -259,9 +259,11 @@ def _split_host(value: str) -> tuple[str, Optional[int], bool]:
     return host, int(rest[1:]), True
 
 
-def _host_allowed(host: str, port: Optional[int], app_port: Optional[int]) -> bool:
+def _host_allowed(host: str, port: Optional[int], app_port: Optional[int], allowed_hosts: tuple[str, ...] = ()) -> bool:
+    from funes_hoard.audio_memory.guard import is_allowed_host
+
     if host not in LOOPBACK_HOSTS:
-        return False
+        return is_allowed_host(host, allowed_hosts) and bool(allowed_hosts)
     if app_port is None:
         return True
     return port == app_port or (port is None and app_port == 80)
@@ -297,7 +299,10 @@ def create_app(
     data_dir = Path(data_dir)
     _setup_logging(data_dir)
     db = Database(data_dir)
-    sources_registry = SourceRegistry(data_dir)
+    sources_registry = SourceRegistry(data_dir, app_port=port)
+    from funes_hoard.audio_memory.guard import is_allowed_host, parse_allowed_hosts
+
+    allowed_hosts = parse_allowed_hosts(os.environ.get("FUNES_ALLOWED_HOSTS"))
     link_factory = link_factory or Link
     if link is None:
         link = link_factory(backend.load_link_config(data_dir))
@@ -317,18 +322,37 @@ def create_app(
     jobs = JobManager()
     scheduler = BackgroundScheduler(db=db, collector=collector, recent_poller=recent_poller, git_poller=git_poller)
 
+    audio_app = None
+    audio_error = ""
+    try:
+        from funes_hoard.audio_memory.config import Config as AudioConfig
+        from funes_hoard.audio_memory.main import create_app as create_audio_app
+
+        audio_config = AudioConfig.from_env()
+        audio_config.data_dir = data_dir / "audio"
+        audio_config.port = port or 8813
+        audio_config.allowed_hosts = tuple(dict.fromkeys((*audio_config.allowed_hosts, *allowed_hosts)))
+        audio_config.data_dir_configured = True
+        audio_app = create_audio_app(audio_config)
+    except ImportError as exc:
+        audio_error = str(exc)
+        logging.getLogger("funes_hoard").warning("Audio module unavailable: %s", exc)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        collector.start()
-        scheduler.start()
-        try:
-            yield
-        finally:
-            scheduler.stop()
-            collector.stop()
-            await app.state.link.aclose()
-            db.close()
-            _remove_own_pid_file(data_dir)
+        async with AsyncExitStack() as stack:
+            if audio_app is not None:
+                await stack.enter_async_context(audio_app.router.lifespan_context(audio_app))
+            collector.start()
+            scheduler.start()
+            try:
+                yield
+            finally:
+                scheduler.stop()
+                collector.stop()
+                await app.state.link.aclose()
+                db.close()
+                _remove_own_pid_file(data_dir)
 
     app = FastAPI(title=DISPLAY_NAME, lifespan=lifespan)
     app.state.db = db
@@ -340,6 +364,8 @@ def create_app(
     app.state.link = link
     app.state.link_factory = link_factory
     app.state.sources_registry = sources_registry
+    app.state.audio_app = audio_app
+    app.state.audio_error = audio_error
 
     # ------------------------------------------------------------ guard --
     @app.middleware("http")
@@ -347,7 +373,7 @@ def create_app(
         # DNS rebinding: a hostile page whose domain resolves to 127.0.0.1
         # still sends its own name (or the wrong port) in Host.
         host, host_port, ok = _split_host(request.headers.get("host", ""))
-        if not ok or not _host_allowed(host, host_port, port):
+        if not ok or not _host_allowed(host, host_port, port, allowed_hosts):
             return _error(403, "forbidden_host", "Host header does not match this app's loopback address.")
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get("sec-fetch-site") == "cross-site":
@@ -365,7 +391,8 @@ def create_app(
                     parts.scheme == "http"
                     and (parts.hostname or "") in LOOPBACK_HOSTS
                     and (port is None or origin_port == port)
-                )
+                ) or (host not in LOOPBACK_HOSTS and (parts.hostname or "").lower() == host
+                      and is_allowed_host(host, allowed_hosts))
                 if not own:
                     return _error(403, "forbidden_origin", "Origin does not match this app.")
         return await call_next(request)
@@ -980,6 +1007,13 @@ def create_app(
         return {"deleted": repo_id}
 
     # --------------------------------------------------------------- SPA --
+    if audio_app is not None:
+        app.mount("/audio", audio_app, name="audio")
+    else:
+        @app.get("/audio")
+        def audio_unavailable():
+            return _error(503, "audio_unavailable", "Install Funes with the audio extra to enable recording and transcription.")
+
     if static_dir is not None and Path(static_dir).is_dir():
         root = Path(static_dir).resolve()
         if (root / "assets").is_dir():

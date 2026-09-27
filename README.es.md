@@ -4,7 +4,7 @@
 
 ### ¿Dónde me había quedado? ¿Qué hacía antes de comer? ¿Cuánto de esta semana se fue de verdad en Faustus?
 
-**La memoria episódica de tu ordenador: aplicación en primer plano, ventana, archivos abiertos y commits, guardados en un SQLite local y filtrados por privacidad antes de escribir nada.**
+**La memoria episódica de tu ordenador: actividad del escritorio y audio grabado localmente, con transcripciones consultables y una línea de tiempo común.**
 
 [English](README.md) · [Inicio rápido](#inicio-rápido) · [Conectar con Faustus](#conectarlo-a-faustus) · [Referencia MCP](docs/MCP.md) · [Portfolio](https://luissalet.github.io/Portfolio/#projects)
 
@@ -61,7 +61,8 @@ contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 | Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
 | Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera; un resultado de ventana dice cuánto tiempo estuvo abierta y, en la interfaz, abre su día en ese momento | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
 | API del agente | Once herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; los ids y las horas se encadenan de una llamada a la siguiente (`activity_timeline(around=<ts de un resultado>)`); todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
-| Recall | `recall`/`recall_search` combinan los propios episodios de Funes con las demás apps Hoard locales -- Argus (pantalla), Echo (portapapeles), Scribe (audio) -- en una única línea de tiempo ordenada y citable (`[argus:moment 88 16:02]`); una fuente que no está en marcha aparece como `unavailable`, nunca rompe la llamada ([docs/RECALL.md](docs/RECALL.md)) | Necesita las apps hermanas en marcha y accesibles por loopback; Funes solo llama a su API de agente de solo lectura, nunca a sus archivos directamente |
+| Memoria de audio | Graba micrófono y audio del sistema, transcribe localmente, importa archivos, busca sesiones, edita notas/etiquetas y exporta TXT/SRT/Markdown. La interfaz **Audio y transcripción** también se puede instalar como PWA | La grabación necesita un dispositivo de audio; la importación funciona sin él |
+| Recall | `recall`/`recall_search` combinan los episodios del escritorio, el audio de Funes, la pantalla de Argus y el portapapeles de Echo en una línea de tiempo citable; se conserva el identificador `[scribe:seg …]` para el audio ([docs/RECALL.md](docs/RECALL.md)) | Argus y Echo necesitan sus apps; el audio funciona dentro de Funes |
 | Modelos compartidos | "Escribe mi día": una narración breve del día en segunda persona ("You spent the morning on..."; el modelo recibe las instrucciones en inglés y suele responder en inglés), guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un servidor Ollama, llama.cpp u otro compatible con OpenAI que ya esté en marcha); un día sin nada registrado se rechaza sin llamar al modelo |
 | Interfaz | Hoy (línea de tiempo con zoom en la que se ven la ausencia y el bloqueo, leyenda, detalle fijado, tramos accesibles con el teclado, "¿Dónde lo dejé?" y "Escribe mi día"), Semana (navegable), Buscar (filtro de fechas), Proyectos (selector de periodo), Archivos y commits, Reglas, Privacidad, Ajustes (Modelos), Actividad del asistente; cada día y cada momento tienen su propia dirección (recargar y Atrás funcionan); español e inglés; tema claro y oscuro | Pensada para escritorio, no para móvil |
 
@@ -135,6 +136,7 @@ Pasos manuales:
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-lock.txt
 cd frontend; npm ci; npm run build; cd ..
+cd audio_ui; npm ci; npm run build; cd ..
 .venv\Scripts\python -m funes_hoard
 ```
 
@@ -149,6 +151,7 @@ Hace falta Python 3.11 o posterior y Node 22:
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-lock.txt
 (cd frontend && npm ci && npm run build)
+(cd audio_ui && npm ci && npm run build)
 .venv/bin/python -m funes_hoard --demo
 ```
 

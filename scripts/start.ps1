@@ -88,6 +88,21 @@ if (-not (Test-Path -LiteralPath $Index)) {
     }
 }
 
+$AudioIndex = Join-Path $RepoRoot "funes_hoard\audio_memory\static\index.html"
+if (-not (Test-Path -LiteralPath $AudioIndex)) {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        throw "The audio interface is not built and Node.js (npm) was not found. Install Node 22 and run this again."
+    }
+    Write-Host "Building the audio interface (first run) ..."
+    Push-Location -LiteralPath (Join-Path $RepoRoot "audio_ui")
+    try {
+        Invoke-Checked "npm ci (audio)" { npm ci --no-audit --no-fund }
+        Invoke-Checked "npm run build (audio)" { npm run build }
+    } finally {
+        Pop-Location
+    }
+}
+
 # --- Start and wait for /api/health ---------------------------------------
 $AppArgs = @("-m", "funes_hoard", "--no-browser", "--port", "$Port")
 if ($Demo) { $AppArgs += "--demo" }

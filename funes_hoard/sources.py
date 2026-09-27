@@ -75,11 +75,18 @@ class Source:
         return asdict(self)
 
 
-def default_sources() -> list[Source]:
-    return [
+def default_sources(data_dir: Optional[Path] = None, app_port: Optional[int] = None) -> list[Source]:
+    sources = [
         Source(id=sid, name=folder, base_url=_default_base_url(folder, port), token_path=_default_token_path(folder))
         for sid, folder, port in _DEFAULTS
     ]
+    if data_dir is not None:
+        # Audio now runs inside Funes on the same port, with its own agent token.
+        sources[-1] = Source(
+            id="scribe", name="Funes audio", base_url=f"http://127.0.0.1:{app_port or 8813}/audio",
+            token_path=str(Path(data_dir) / "audio" / "mcp-token"),
+        )
+    return sources
 
 
 def _patch_source(source: Source, patch: dict) -> Source:
@@ -116,9 +123,10 @@ class SourceRegistry:
     """Resolves the effective source list: defaults, then `data/sources.json`
     (persisted edits from the UI), then `FUNES_SOURCES` (env override)."""
 
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, app_port: Optional[int] = None):
         self.data_dir = Path(data_dir)
         self._path = self.data_dir / "sources.json"
+        self.app_port = app_port
 
     def _stored(self) -> dict[str, dict]:
         try:
@@ -138,7 +146,7 @@ class SourceRegistry:
         return _keyed_by_id(data)
 
     def list(self) -> list[Source]:
-        sources: dict[str, Source] = {s.id: s for s in default_sources()}
+        sources: dict[str, Source] = {s.id: s for s in default_sources(self.data_dir, self.app_port)}
         for layer in (self._stored(), self._env_overrides()):
             for sid, patch in layer.items():
                 if sid in sources:

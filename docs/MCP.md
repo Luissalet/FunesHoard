@@ -252,8 +252,8 @@ source unavailable and the user asks why.
 {"sources": [
   {"id": "argus", "name": "Argus's Hoard", "base_url": "http://127.0.0.1:5183", "enabled": true,
    "ok": true, "reason": null, "detail": {"service": "argus-hoard", "status": "ok"}},
-  {"id": "scribe", "name": "Scribe's Hoard", "base_url": "http://127.0.0.1:5185", "enabled": true,
-   "ok": false, "reason": "unreachable", "detail": null}]}
+  {"id": "scribe", "name": "Funes audio", "base_url": "http://127.0.0.1:8813/audio", "enabled": true,
+   "ok": true, "reason": null, "detail": {"service": "scribe-hoard", "status": "ok"}}]}
 ```
 
 ## Errors

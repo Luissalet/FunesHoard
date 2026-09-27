@@ -4,7 +4,7 @@
 
 ### Where was I? What was I doing before lunch? How much of this week actually went to Faustus?
 
-**Your computer's episodic memory: foreground app, window, files opened and commits made, kept in a local SQLite file and filtered for privacy before anything is written.**
+**Your computer's episodic memory: desktop activity and locally recorded audio, with searchable transcripts and a shared timeline.**
 
 [Español](README.es.md) · [Quick start](#quick-start) · [Connect to Faustus](#connect-it-to-faustus) · [MCP reference](docs/MCP.md) · [Portfolio](https://luissalet.github.io/Portfolio/#projects)
 
@@ -56,7 +56,8 @@ and gives the assistant eight small tools to ask for them.
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
 | Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing; a window hit says how long it was open and, in the interface, opens its day at that moment | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
 | Agent API | Eleven tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
-| Recall | `recall`/`recall_search` merge Funes's own episodes with the other local Hoard apps -- Argus (screen), Echo (clipboard), Scribe (audio) -- into one time-sorted, citable timeline (`[argus:moment 88 16:02]`); a source that is not running is reported `unavailable`, never fatal ([docs/RECALL.md](docs/RECALL.md)) | Needs the sibling apps running and reachable on loopback; Funes calls only their own read-only agent API, never their files directly |
+| Audio memory | Record microphone and system audio, transcribe locally, import audio, search sessions, edit notes/tags and export TXT/SRT/Markdown. Open **Audio y transcripción** in Funes or install its `/audio/` PWA. Audio lives in `data/audio`, with its own retention and local model cache | Recording requires an audio device; imported files work without one |
+| Recall | `recall`/`recall_search` merge desktop episodes, Funes audio, Argus screen memory and Echo clipboard history into one citable timeline (`[scribe:seg 17 16:04]` keeps the existing audio citation id) ([docs/RECALL.md](docs/RECALL.md)) | Argus and Echo need their sibling apps; audio runs inside Funes |
 | Shared models | "Write my day": a cached, regenerable short narrative of a day ("You spent the morning on..."), from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama, llama.cpp or other OpenAI-compatible server); a day with nothing recorded is refused without calling the model |
 | Interface | Today (zoomable timeline with away and locked time drawn, legend, pinned details, keyboard-focusable segments, Where was I?, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; every day and moment has its own address (reload and Back work); English/Spanish; light/dark | Desktop layout; not designed for phones |
 
@@ -124,6 +125,7 @@ Manual steps:
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-lock.txt
 cd frontend; npm ci; npm run build; cd ..
+cd audio_ui; npm ci; npm run build; cd ..
 .venv\Scripts\python -m funes_hoard
 ```
 
@@ -138,6 +140,7 @@ or newer and Node 22:
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-lock.txt
 (cd frontend && npm ci && npm run build)
+(cd audio_ui && npm ci && npm run build)
 .venv/bin/python -m funes_hoard --demo
 ```
 

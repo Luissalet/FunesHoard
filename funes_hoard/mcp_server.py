@@ -9,6 +9,7 @@ for these tools' behaviour (see `funes_hoard/api.py` and `queries.py`).
 """
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -45,14 +46,15 @@ mcp = FastMCP(
     instructions=(
         "Funes's Hoard is the user's local activity memory: which app and window were in "
         "front of them and for how long, which files they opened and which commits they "
-        "made. It also federates the other local Hoard apps (screen, clipboard, audio) into "
+        "made. Its audio memory records and transcribes meetings and voice notes locally. "
+        "It also federates the screen and clipboard Hoards into "
         "one timeline. For questions restricted to Funes's own activity, use "
         "activity_where_was_i for the last context and activity_summary(day=..., "
         "group_by='project') for a bounded day's project totals. activity_projects(since=...) "
         "is open-ended and includes later days, so do not use it for 'yesterday only'. "
         "For cross-Hoard 'what was I doing / qué hacía / qué pasó a las X' questions, "
         "call recall FIRST -- it merges Funes's own episodes with Argus (screen), Echo "
-        "(clipboard) and Scribe (audio) around that moment and gives every item a short "
+        "(clipboard) and Funes audio around that moment and gives every item a short "
         "bracket citation (e.g. [argus:moment 88 16:02]); quote those citations verbatim so "
         "the user can trace an answer back to its source, and only fall back to that "
         "source's own tools (screen_*, clip_*, scribe_*) when more detail is needed. Use "
@@ -62,8 +64,12 @@ mcp = FastMCP(
         "what was visible, not that a file was edited or left with pending changes; an empty "
         "commits list does not prove uncommitted work. Answer from the 'human' strings and *_human "
         "totals instead of doing arithmetic on seconds. Times are local ISO 8601 with UTC "
-        "offset. Everything is read-only except activity_pause, which can only pause "
-        "recording (never resume, change rules, delete or export)."
+        "offset. Desktop activity tools are read-only except activity_pause. "
+        "The scribe_* tools manage Funes audio sessions: start recording only when the user "
+        "explicitly asks in the current message, and then tell them how to stop it. "
+        "Read a transcript before summarising it; automatic speech recognition can err, "
+        "so attribute claims to the transcript and include session title and timestamp. "
+        "scribe_delete permanently removes a session and needs an explicit request."
     ),
 )
 
@@ -88,6 +94,30 @@ def _post(path: str, payload: dict) -> dict:
         code = body.get("error", f"http_{resp.status_code}") if isinstance(body, dict) else f"http_{resp.status_code}"
         message = body.get("message", resp.text[:200]) if isinstance(body, dict) else resp.text[:200]
         raise ToolError(f"{code}: {message}")
+    return resp.json()
+
+
+def _audio_call(name: str, arguments: dict) -> dict:
+    """Send an audio-memory tool through the embedded app's existing API."""
+    data_dir = Path(os.environ.get("FUNES_DATA_DIR") or Path(__file__).resolve().parent.parent / "data")
+    token_file = Path(os.environ.get("FUNES_AUDIO_TOKEN_FILE") or data_dir / "audio" / "mcp-token")
+    try:
+        token = token_file.read_text(encoding="utf-8").strip()
+        with httpx.Client(timeout=90.0, trust_env=False) as client:
+            resp = client.post(
+                f"{_app_url()}/audio/api/agent/call",
+                json={"name": name, "arguments": {k: v for k, v in arguments.items() if v is not None}},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except (OSError, httpx.HTTPError) as exc:
+        raise ToolError(f"funes-audio_unavailable: {type(exc).__name__}: {exc}") from exc
+    if resp.status_code >= 400:
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        detail = body.get("error") or body.get("detail") or resp.text[:200]
+        raise ToolError(f"funes-audio_http_{resp.status_code}: {detail}")
     return resp.json()
 
 
@@ -305,6 +335,77 @@ def sources_status() -> dict:
     Keywords: sources status, is argus running, is echo running, is scribe running, estado de las fuentes, está encendido argus, está encendido echo, está encendido scribe.
     """
     return _post("/api/agent/sources_status", {})
+
+
+# Audio memory lives in this same Funes process and uses its own data directory.
+_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+_IDEMPOTENT_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+_DELETE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
+
+
+@mcp.tool(annotations=_READ)
+def scribe_status() -> dict:
+    """Audio recording status, devices, transcriber and queue. Estado de grabación de audio."""
+    return _audio_call("scribe_status", {})
+
+
+@mcp.tool(annotations=_READ)
+def scribe_sessions(q: Optional[str] = None, kind: Optional[str] = None, tag: Optional[str] = None,
+                    from_: Optional[str] = None, to: Optional[str] = None, limit: int = 20) -> dict:
+    """List meetings, interviews and voice notes with title, date and first line. Lista de sesiones."""
+    return _audio_call("scribe_sessions", {"q": q, "kind": kind, "tag": tag, "from": from_, "to": to, "limit": limit})
+
+
+@mcp.tool(annotations=_READ)
+def scribe_transcript(session_id: str, from_s: Optional[float] = None, to_s: Optional[float] = None,
+                      max_chars: int = 12000) -> dict:
+    """Read a session transcript with speakers and timestamps. Page with from_s/to_s."""
+    return _audio_call("scribe_transcript", {"session_id": session_id, "from_s": from_s, "to_s": to_s, "max_chars": max_chars})
+
+
+@mcp.tool(annotations=_READ)
+def scribe_search(q: str, kind: Optional[str] = None, from_: Optional[str] = None,
+                  to: Optional[str] = None, limit: int = 40) -> dict:
+    """Search transcript text across all audio sessions; returns timestamped hits."""
+    return _audio_call("scribe_search", {"q": q, "kind": kind, "from": from_, "to": to, "limit": limit})
+
+
+@mcp.tool(annotations=_WRITE)
+def scribe_start(title: str = "", kind: str = "meeting", mic: bool = True,
+                 system: bool = True, language: str = "auto") -> dict:
+    """Start microphone/system audio recording only when the user explicitly asks now."""
+    return _audio_call("scribe_start", {"title": title, "kind": kind, "mic": mic, "system": system, "language": language})
+
+
+@mcp.tool(annotations=_IDEMPOTENT_WRITE)
+def scribe_stop(session_id: str) -> dict:
+    """Stop an active recording; final transcription then runs in background."""
+    return _audio_call("scribe_stop", {"session_id": session_id})
+
+
+@mcp.tool(annotations=_IDEMPOTENT_WRITE)
+def scribe_note(session_id: str, notes: str) -> dict:
+    """Append notes to an audio session; an identical trailing note is kept once."""
+    return _audio_call("scribe_note", {"session_id": session_id, "notes": notes})
+
+
+@mcp.tool(annotations=_IDEMPOTENT_WRITE)
+def scribe_tag(session_id: str, add: Optional[list[str]] = None,
+               remove: Optional[list[str]] = None) -> dict:
+    """Add or remove tags on an audio session."""
+    return _audio_call("scribe_tag", {"session_id": session_id, "add": add or [], "remove": remove or []})
+
+
+@mcp.tool(annotations=_READ)
+def scribe_export(session_id: str, format: str = "md") -> dict:
+    """Render transcript and notes as Markdown, plain text or SRT subtitles."""
+    return _audio_call("scribe_export", {"session_id": session_id, "format": format})
+
+
+@mcp.tool(annotations=_DELETE)
+def scribe_delete(session_id: str) -> dict:
+    """Permanently delete an audio session only at the user's explicit request."""
+    return _audio_call("scribe_delete", {"session_id": session_id})
 
 
 if __name__ == "__main__":

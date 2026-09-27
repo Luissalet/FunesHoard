@@ -4,7 +4,7 @@ Today the assistant has to ask several apps separately to answer "what was
 I doing at 16:00?": Funes (episodic memory of the PC: windows, files,
 git...), [Argus's Hoard](../../ArgusHoard) (screen memory: OCR of frames,
 grouped in "moments"), [Echo's Hoard](../../EchoHoard) (clipboard history)
-and [Scribe's Hoard](../../ScribeHoard) (audio transcripts). `recall` and
+and Funes's own audio memory at `/audio/`. `recall` and
 `recall_search` (`funes_hoard/recall.py`) ask all of them in parallel and
 merge the answers into one time-sorted, citable timeline, so a single tool
 call answers the question.
@@ -14,8 +14,8 @@ call answers the question.
 1. `funes_hoard/sources.py` holds a small registry of federated sources
    (`argus`, `echo`, `scribe`), each `{id, name, base_url, token_path,
    enabled}`. Defaults point at the well-known sibling folders and ports
-   (`Argus's Hoard` on 5183, `Echo's Hoard` on 5188, `Scribe's Hoard` on
-   5185, resolved next to this repo); a sibling's `data/url` file overrides
+   (`Argus's Hoard` on 5183, `Echo's Hoard` on 5188, and Funes audio on
+   this same server); a sibling's `data/url` file overrides
    the port if it was moved, and the registry itself can be edited from
    **Settings -> Sources** or `PUT /api/sources/<id>`, persisted to
    `data/sources.json`. `FUNES_SOURCES` (a JSON list of `{id, ...}`
@@ -29,7 +29,7 @@ call answers the question.
 3. Each source is asked with its own tools over the family contract
    (`POST /api/agent/call`, Bearer token from `<app>/data/mcp-token`):
    Argus's `screen_timeline`, Echo's `clip_recent` (filtered to the window,
-   since Echo has no window-bounded "recent" tool), and Scribe's
+   since Echo has no window-bounded "recent" tool), and Funes audio's
    `scribe_sessions` + `scribe_transcript` for the sessions that overlap the
    window. `recall_search(query)` uses each source's own search tool
    instead (`screen_search`, `clip_search`, `scribe_search`).
@@ -53,11 +53,11 @@ user can trace an answer back to where it came from:
 | Funes (search hits) | `[funes:<span\|file\|commit> <id> <HH:MM>]` | `[funes:span 26 10:30]` |
 | Argus (screen) | `[argus:moment <frame id> <HH:MM>]` | `[argus:moment 88 16:02]` |
 | Echo (clipboard) | `[echo:clip <clip id>]` | `[echo:clip 512]` |
-| Scribe (audio) | `[scribe:seg <segment id/index> <HH:MM>]` | `[scribe:seg 17 16:04]` |
+| Funes audio (stable source id `scribe`) | `[scribe:seg <segment id/index> <HH:MM>]` | `[scribe:seg 17 16:04]` |
 
 `ref` carries the payload needed to open the item with that source's own
 tools for more detail -- e.g. an Argus frame id for `screen_frame_text`, a
-Scribe `session_id` and `start_s` for `scribe_transcript`. `recall` never
+Audio `session_id` and `start_s` for `scribe_transcript`. `recall` never
 invents a citation for an item it did not itself return: if a source is
 unavailable, its items are simply absent, not guessed.
 

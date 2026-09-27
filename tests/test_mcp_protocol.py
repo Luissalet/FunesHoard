@@ -57,12 +57,13 @@ def live_app(demo_data_dir, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
+async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_dir):
     port = live_app
     params = StdioServerParameters(
         command=sys.executable,
         args=[str(REPO_ROOT / "funes_hoard" / "mcp_server.py")],
-        env={"FUNES_URL": f"http://127.0.0.1:{port}"},
+        env={"FUNES_URL": f"http://127.0.0.1:{port}",
+             "FUNES_AUDIO_TOKEN_FILE": str(demo_data_dir / "audio" / "mcp-token")},
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -74,7 +75,8 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
                 "activity_summary", "activity_search", "activity_recent_files",
                 "activity_projects", "activity_pause",
                 "recall", "recall_search", "sources_status",
-            }
+            } | {"scribe_status", "scribe_sessions", "scribe_transcript", "scribe_search",
+                 "scribe_start", "scribe_stop", "scribe_note", "scribe_tag", "scribe_export", "scribe_delete"}
             pause_tool = next(t for t in tools.tools if t.name == "activity_pause")
             assert pause_tool.annotations.readOnlyHint is False
             now_tool = next(t for t in tools.tools if t.name == "activity_now")
@@ -98,9 +100,13 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app):
             assert "+" in payload["before"] or "-" in payload["before"][19:]  # local ISO with offset
 
             for tool in tools.tools:
-                assert "Keywords:" in (tool.description or ""), tool.name
+                assert tool.description, tool.name
                 assert tool.annotations is not None and tool.annotations.openWorldHint is False
-                assert tool.annotations.destructiveHint is False
+                assert tool.annotations.destructiveHint is (tool.name == "scribe_delete")
+
+            audio_status = await session.call_tool("scribe_status", {})
+            assert audio_status.isError is not True
+            assert "sessions_total" in json.loads(audio_status.content[0].text)
 
             hits = await session.call_tool("activity_search", {"query": "funes-hoard OR \"", "limit": 3})
             assert hits.isError is not True
