@@ -181,7 +181,7 @@ shutdown), and builds the prompt for the one feature that needs a model.
 
 `funes_hoard/sources.py` + `funes_hoard/recall.py` turn Funes into the
 single timeline of the day, merging its own spans with the other local
-Hoard apps -- Argus (screen), Echo (clipboard) and Scribe (audio) -- see
+Hoard apps -- Argus (screen) and Echo (clipboard), plus embedded Funes audio -- see
 [docs/RECALL.md](RECALL.md) for the citation format and how it works. Funes
 never opens another app's database or files: it calls that app's own
 `/api/agent/call` (family contract) over loopback with that app's own

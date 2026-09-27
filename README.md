@@ -79,7 +79,7 @@ as a person in the browser and as a local model over MCP
   moment in its day's timeline.
 - **"Faustus, ¿qué estaba haciendo a las 16:00?"**: one `recall` call merges
   Funes's own window history with what was on screen (Argus), what was
-  copied (Echo) and what was said in a call (Scribe) around that moment,
+  copied (Echo) and what was said in a call (Funes audio) around that moment,
   each item with a short citation to quote back; a source that is not
   running just shows up as unavailable, the rest of the answer still comes.
 - **"Faustus, ¿dónde lo dejé ayer?"**: one `activity_where_was_i` call,
@@ -180,7 +180,7 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | `activity_recent_files` | Recently opened files | yes |
 | `activity_projects` | Time per project, last touched, commits | yes |
 | `activity_pause` | Pause recording; never shortens an existing pause | **no** (the only write) |
-| `recall` | "What was I doing at time X" merged across Funes, Argus, Echo and Scribe, with a short citation per item | yes |
+| `recall` | "What was I doing at time X" merged across Funes activity/audio, Argus and Echo, with a short citation per item | yes |
 | `recall_search` | The same merge, but a text search across a range instead of a moment | yes |
 | `sources_status` | Health of every federated source (running, reachable, token accepted) | yes |
 
@@ -215,7 +215,7 @@ flowchart LR
   API -->|"Write my day"| Link["HoardLink: shared language model"]
   API -->|"recall: /api/agent/call"| Argus["Argus's Hoard (screen)"]
   API -->|"recall: /api/agent/call"| Echo["Echo's Hoard (clipboard)"]
-  API -->|"recall: /api/agent/call"| Scribe["Scribe's Hoard (audio)"]
+  API -->|"recall: /audio/api/agent/call"| Audio["Funes audio memory"]
 ```
 
 FastAPI, one collector thread sampling once a second, one scheduler thread

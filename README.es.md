@@ -85,7 +85,7 @@ principio a fin como persona en el navegador y como modelo local por MCP
 - **"Faustus, ¿qué estaba haciendo a las 16:00?"**: una sola llamada a
   `recall` combina el historial de ventanas de Funes con lo que había en
   pantalla (Argus), lo que se copió (Echo) y lo que se dijo en una llamada
-  (Scribe) alrededor de ese momento, cada resultado con una cita breve para
+  (audio de Funes) alrededor de ese momento, cada resultado con una cita breve para
   responder citándola; si una fuente no está en marcha, aparece como no
   disponible y el resto de la respuesta llega igual.
 - **"Faustus, ¿dónde lo dejé ayer?"**: una sola llamada a
@@ -192,7 +192,7 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | `activity_recent_files` | Archivos abiertos hace poco | sí |
 | `activity_projects` | Tiempo por proyecto, última vez y commits | sí |
 | `activity_pause` | Pausar la grabación; nunca acorta una pausa ya puesta | **no** (la única escritura) |
-| `recall` | "Qué estaba haciendo a las X" combinado entre Funes, Argus, Echo y Scribe, con una cita breve por resultado | sí |
+| `recall` | "Qué estaba haciendo a las X" combinado entre la actividad y el audio de Funes, Argus y Echo, con una cita breve por resultado | sí |
 | `recall_search` | La misma combinación, pero busca texto en un rango en vez de un momento | sí |
 | `sources_status` | Estado de cada fuente combinada (en marcha, accesible, token aceptado) | sí |
 

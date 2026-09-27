@@ -201,7 +201,7 @@ resumes by itself when the pause ends.
 
 **Call this first for "what was I doing / qué hacía / qué pasó a las X".**
 Merges Funes's own episodes with the other local Hoard apps -- Argus
-(screen OCR), Echo (clipboard) and Scribe (audio transcripts) -- around
+(screen OCR), Echo (clipboard) and Funes audio transcripts -- around
 `at` (default now) +/- `window_minutes` into one time-sorted list. Each
 item is `{time, source, kind, text, citation, ref}`: `citation` is a short
 bracket tag to quote verbatim (`[argus:moment 88 16:02]`, `[echo:clip
@@ -224,7 +224,7 @@ citation format and how to add a source.
     "text": "Code.exe: main.py - Atlas - Visual Studio Code", "citation": "[funes:episode 4131 16:00]",
     "ref": {"id": 4131, "start": "2026-09-22T15:55:00+02:00", "end": "2026-09-22T16:05:00+02:00", "app": "Code.exe", "project": "Atlas"}}],
  "summary": {"counts": {"funes": 1, "argus": 1, "echo": 0, "scribe": 0}, "total": 2,
-             "unavailable": [{"id": "scribe", "name": "Scribe's Hoard", "reason": "unreachable"}]}}
+             "unavailable": []}}
 ```
 
 ### recall_search(query, since=None, until=None, sources=None, limit_per_source=20)
