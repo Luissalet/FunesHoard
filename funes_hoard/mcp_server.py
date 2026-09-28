@@ -49,7 +49,8 @@ mcp = FastMCP(
         "made. Its audio memory records and transcribes meetings and voice notes locally. "
         "It also federates the screen and clipboard Hoards into "
         "one timeline. For questions restricted to Funes's own activity, use "
-        "activity_where_was_i for the last context and activity_summary(day=..., "
+        "activity_where_was_i for the last context, activity_project_resume(project=...) "
+        "for one named project's recent evidence, and activity_summary(day=..., "
         "group_by='project') for a bounded day's project totals. activity_projects(since=...) "
         "is open-ended and includes later days, so do not use it for 'yesterday only'. "
         "For cross-Hoard 'what was I doing / qué hacía / qué pasó a las X' questions, "
@@ -158,6 +159,20 @@ def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_ca
     Keywords: where was I, where did I leave off, resume, what was I working on, this morning, dónde estaba, donde lo dejé, en qué estaba trabajando, retomar, contexto, esta mañana.
     """
     return _post("/api/agent/activity_where_was_i", {"before": before, "contexts": contexts, "all_categories": all_categories})
+
+
+@mcp.tool(annotations=_READ)
+def activity_project_resume(project: str, days: int = 30, limit: int = 5) -> dict:
+    """Resume one named project from its recent windows, opened files and commits.
+
+    Use when asked where work on a specific project stopped, including weeks
+    ago. Exact project name, case insensitive. Last 30 days by default; days
+    1-180, limit 1-10 per evidence type. Foreground titles do not prove edits.
+    Empty results mean no recorded evidence in that interval, not no work.
+    Keywords: resume project, where did I leave off on project, project context,
+    retomar proyecto, por dónde iba en el proyecto, donde lo dejé en proyecto.
+    """
+    return _post("/api/agent/activity_project_resume", {"project": project, "days": days, "limit": limit})
 
 
 @mcp.tool(annotations=_READ)

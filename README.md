@@ -43,7 +43,7 @@ user to reconstruct it. Funes's Hoard records the one thing the model
 cannot see: the sequence of windows in front of the user, with idle and
 locked time, the files they opened and the commits they made. It turns
 that into spans, day summaries, focus blocks and resume-context answers,
-and gives the assistant eight small tools to ask for them.
+and gives the assistant focused tools to ask for them.
 
 ## What is implemented
 
@@ -55,7 +55,7 @@ and gives the assistant eight small tools to ask for them.
 | Derived knowledge | Day, week and range totals by category/app/project, clipped at the window edges; first/last activity; context switches (>= 10 s dwell); focus blocks (>= 25 min, each interruption <= 2 min); "where was I" with distinct contexts (work first; music, chat and games left out unless asked), their recent titles, files (the project's own first) and commits | Focus is measured from window time only; it says nothing about attention |
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
 | Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing; a window hit says how long it was open and, in the interface, opens its day at that moment | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
-| Agent API | Eleven tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
+| Agent API | Twelve tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); project-specific resume reaches back up to 180 days; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
 | Audio memory | Record microphone and system audio, transcribe locally, import audio, search sessions, edit notes/tags and export TXT/SRT/Markdown. Open **Audio y transcripción** in Funes or install its `/audio/` PWA. Audio lives in `data/audio`, with its own retention and local model cache | Recording requires an audio device; imported files work without one |
 | Recall | `recall`/`recall_search` merge desktop episodes, Funes audio, Argus screen memory and Echo clipboard history into one citable timeline (`[scribe:seg 17 16:04]` keeps the existing audio citation id) ([docs/RECALL.md](docs/RECALL.md)) | Argus and Echo need their sibling apps; audio runs inside Funes |
 | Shared models | "Write my day": a cached, regenerable short narrative of a day ("You spent the morning on..."), from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama, llama.cpp or other OpenAI-compatible server); a day with nothing recorded is refused without calling the model |
@@ -174,6 +174,7 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | --- | --- | --- |
 | `activity_now` | Current app, title, project, idle seconds, recording or paused (and until when) | yes |
 | `activity_where_was_i` | Resume context: last distinct contexts before a moment, with title, files and commits | yes |
+| `activity_project_resume` | Resume one named project's recent windows, opened files and commits, up to 180 days back | yes |
 | `activity_timeline` | Spans for a day or range, paginated with `offset` | yes |
 | `activity_summary` | Totals grouped by category/app/project, focus blocks, context switches | yes |
 | `activity_search` | When a title, file or commit containing some words appeared | yes |
@@ -239,7 +240,7 @@ HTTP to the app. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   `Host` header that is not a loopback name with this app's port) and
   cross-site writes (a foreign `Origin` or `Sec-Fetch-Site: cross-site`);
   there is no CORS.
-- The assistant sees only what the eight tools return and can do exactly
+- The assistant sees only what its tools return and can do exactly
   one thing: pause (or lengthen a pause). Every call, including rejected
   ones, is stored in the `agent_calls` audit table (tool, argument
   summary, duration, ok/error) and listed on "Assistant activity".

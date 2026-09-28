@@ -71,7 +71,7 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
             tools = await session.list_tools()
             names = {t.name for t in tools.tools}
             assert names == {
-                "activity_now", "activity_where_was_i", "activity_timeline",
+                "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline",
                 "activity_summary", "activity_search", "activity_recent_files",
                 "activity_projects", "activity_pause",
                 "recall", "recall_search", "sources_status",
@@ -84,6 +84,8 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
             resume_tool = next(t for t in tools.tools if t.name == "activity_where_was_i")
             assert "not that it was edited" in resume_tool.description
             assert "no recorded commit does not imply" in resume_tool.description
+            project_resume_tool = next(t for t in tools.tools if t.name == "activity_project_resume")
+            assert "weeks" in project_resume_tool.description
             projects_tool = next(t for t in tools.tools if t.name == "activity_projects")
             assert "includes today" in projects_tool.description
 
@@ -98,6 +100,11 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
             assert 1 <= len(payload["contexts"]) <= 2
             assert payload["contexts"][0]["title"]
             assert "+" in payload["before"] or "-" in payload["before"][19:]  # local ISO with offset
+
+            project_result = await session.call_tool("activity_project_resume", {"project": "Atlas", "days": 30})
+            assert project_result.isError is not True
+            project_payload = json.loads(project_result.content[0].text)
+            assert project_payload["found"] and project_payload["recent_windows"]
 
             for tool in tools.tools:
                 assert tool.description, tool.name

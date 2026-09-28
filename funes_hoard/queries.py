@@ -163,6 +163,62 @@ def _path_in_project(path: str, project: str) -> bool:
     return project.lower() in parts[:-1]
 
 
+def activity_project_resume(
+    db: Database, project: str, days: int = 30, limit: int = 5, now: Optional[float] = None,
+) -> dict:
+    """Recent evidence for one exact project, even if it was last used weeks ago."""
+    project = project.strip() if isinstance(project, str) else ""
+    if not project or len(project) > 120:
+        raise BadInput("bad_project", "project must be a name of 1-120 characters.")
+    if not 1 <= days <= 180 or not 1 <= limit <= 10:
+        raise BadInput("bad_arguments", "days must be 1-180 and limit must be 1-10.")
+    now = now if now is not None else time.time()
+    since = now - days * 86400.0
+    rows = db.query(
+        "SELECT * FROM spans WHERE project = ? COLLATE NOCASE AND kind = 'active' "
+        "AND start_ts < ? AND end_ts > ? ORDER BY end_ts DESC",
+        (project, now, since),
+    )
+    spans = clip_spans([_row_to_span(r) for r in rows], since, now)
+    windows = [
+        {
+            "app": s.app, "title": s.title, "start": s.start_ts, "end": s.end_ts,
+            "duration_s": round(s.duration_s), "human": human_range(s.start_ts, s.end_ts, now),
+        }
+        for s in spans if s.duration_s >= 10
+    ][:limit]
+    file_rows = db.query(
+        "SELECT ts, path FROM file_events WHERE ts >= ? AND ts <= ? ORDER BY ts DESC", (since, now)
+    )
+    files = []
+    seen_paths = set()
+    for row in file_rows:
+        path = row["path"]
+        if _path_in_project(path, project) and path.lower() not in seen_paths:
+            files.append({"path": path, "ts": row["ts"], "when": human_moment(row["ts"], now)})
+            seen_paths.add(path.lower())
+            if len(files) == limit:
+                break
+    commits = [
+        {"subject": r["subject"], "sha": r["sha"][:10], "ts": r["ts"], "when": human_moment(r["ts"], now)}
+        for r in db.query(
+            "SELECT ts, subject, sha FROM commits WHERE repo = ? COLLATE NOCASE "
+            "AND ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT ?", (project, since, now, limit)
+        )
+    ]
+    return {
+        "project": project, "since": since, "until": now,
+        "last_activity": spans[0].end_ts if spans else None,
+        "active_s": round(sum(s.duration_s for s in spans)),
+        "recent_windows": windows, "recent_files": files, "recent_commits": commits,
+        "found": bool(spans or files or commits),
+        "evidence_limit": (
+            "Window titles show foreground activity, not edits or pending changes. "
+            "Files are recorded openings; commits are recorded commits. Do not infer missing work."
+        ),
+    }
+
+
 def activity_timeline(
     db: Database, start: Optional[str], end: Optional[str], min_minutes: Optional[float], limit: int,
     now: Optional[float] = None, offset: int = 0, day: Optional[str] = None, around: Optional[str] = None,

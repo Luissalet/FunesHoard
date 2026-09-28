@@ -241,6 +241,54 @@ def test_agent_projects_has_a_human_last_touched(client):
         assert "last_touched_human" in item and item["last_touched_human"]
 
 
+def test_agent_project_resume_is_scoped_and_audited(client):
+    response = client.post("/api/agent/activity_project_resume", json={"project": "Atlas", "days": 30})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["project"] == "Atlas" and body["found"]
+    assert body["recent_windows"]
+    assert all("+" in item["start"] or "-" in item["start"][19:] for item in body["recent_windows"])
+    assert all("Atlas" in item["path"] for item in body["recent_files"])
+    assert "not edits" in body["evidence_limit"]
+    assert any(item["tool"] == "activity_project_resume" for item in client.get("/api/agent-calls").json()["items"])
+    absent = client.post("/api/agent/activity_project_resume", json={"project": "NotRecordedHere"}).json()
+    assert absent["found"] is False and not absent["recent_windows"]
+    assert client.post("/api/agent/activity_project_resume", json={"project": " "}).status_code == 400
+
+
+def test_project_resume_reaches_weeks_back_without_other_project_leak(tmp_path):
+    from funes_hoard import queries
+    from funes_hoard.db import Database
+
+    db = Database(tmp_path)
+    now = 1_800_000_000.0
+    for project, age_days, title in [
+        ("Atlas", 12, "atlas chapter outline"),
+        ("Atlas", 40, "too old"),
+        ("Other", 1, "unrelated newer window"),
+    ]:
+        end = now - age_days * 86400
+        db.execute(
+            "INSERT INTO spans(start_ts, end_ts, kind, app, exe, title, category, project, open) "
+            "VALUES (?, ?, 'active', 'Code.exe', '', ?, 'Coding', ?, 0)",
+            (end - 300, end, title, project),
+        )
+    for path in ("C:/work/Atlas/notes.md", "C:/work/Atlas/notes.md", "C:/work/Other/notes.md"):
+        db.execute("INSERT INTO file_events(ts, path, app_hint) VALUES (?, ?, '')", (now - 11 * 86400, path))
+    for repo in ("Atlas", "Other"):
+        db.execute(
+            "INSERT INTO commits(ts, repo, sha, subject, author) VALUES (?, ?, ?, ?, 'tester')",
+            (now - 10 * 86400, repo, (repo.lower() + "0" * 40)[:40], f"{repo} checkpoint"),
+        )
+    result = queries.activity_project_resume(db, "atlas", now=now)
+    assert result["found"] and result["last_activity"] == now - 12 * 86400
+    assert result["active_s"] == 300
+    assert [w["title"] for w in result["recent_windows"]] == ["atlas chapter outline"]
+    assert [f["path"] for f in result["recent_files"]] == ["C:/work/Atlas/notes.md"]
+    assert [c["subject"] for c in result["recent_commits"]] == ["Atlas checkpoint"]
+    assert not queries.activity_project_resume(db, "Atlas", days=3, now=now)["found"]
+
+
 def test_agent_search_since_a_day_word_means_from_its_midnight(client):
     body = client.post("/api/agent/activity_search", json={"query": "Visual Studio Code", "since": "yesterday", "limit": 50}).json()
     assert body["items"], "since=yesterday must mean from yesterday 00:00, not from 24 h ago this second"

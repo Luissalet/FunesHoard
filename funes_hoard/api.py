@@ -147,6 +147,12 @@ class ProjectsArgs(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
 
 
+class ProjectResumeArgs(BaseModel):
+    project: str
+    days: int = Field(default=30, ge=1, le=180)
+    limit: int = Field(default=5, ge=1, le=10)
+
+
 class PrivacyRuleIn(BaseModel):
     kind: str
     match_type: str
@@ -233,7 +239,7 @@ class SourcePatchIn(BaseModel):
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 AGENT_TOOLS = (
-    "activity_now", "activity_where_was_i", "activity_timeline", "activity_summary",
+    "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline", "activity_summary",
     "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
     "recall", "recall_search", "sources_status",
 )
@@ -491,6 +497,13 @@ def create_app(
         return run_agent(
             "activity_where_was_i", _args(before=args.before, contexts=args.contexts, all_categories=args.all_categories),
             lambda: queries.activity_where_was_i(db, args.before, args.contexts, all_categories=args.all_categories, agent=True),
+        )
+
+    @app.post("/api/agent/activity_project_resume")
+    def agent_project_resume(args: ProjectResumeArgs):
+        return run_agent(
+            "activity_project_resume", _args(project=args.project, days=args.days, limit=args.limit),
+            lambda: queries.activity_project_resume(db, args.project, args.days, args.limit),
         )
 
     @app.post("/api/agent/activity_timeline")

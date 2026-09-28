@@ -10,7 +10,7 @@ behaviour below is defined in `funes_hoard/queries.py` and `funes_hoard/api.py`.
 ## Contract
 
 - **Read-only except `activity_pause`.** The agent surface is exactly the
-  eleven routes below (a test enumerates the app's routes). The pause can
+  twelve routes below (a test enumerates the app's routes). The pause can
   only *extend* a pause: it cannot resume recording, shorten a pause the
   human set, or turn "pause until resumed" into a timed pause. Rules,
   deletion, retention and export exist only in the UI.
@@ -91,6 +91,17 @@ response keeps the array.
     "start": "2026-09-21T17:25:00+02:00", "end": "2026-09-21T17:55:00+02:00",
     "duration_s": 1800, "human": "yesterday 17:25-17:55, 30 min", "files": [], "commits": []}]}
 ```
+
+### activity_project_resume(project, days=30, limit=5)
+
+Retrieve the recent foreground windows, opened files and recorded commits
+for one exact project name (case insensitive). The default window is 30 days;
+`days` is 1-180 and `limit` is 1-10 per evidence type. Paths must contain the
+project as a directory name, and commits must name the project as their repo.
+The response includes `found`, local ISO times, and `evidence_limit`. A window
+title does not prove an edit; an empty result means no recorded evidence in
+the requested interval. This answers project-specific resume questions that
+the three-day `activity_where_was_i` window cannot reach.
 
 ### activity_timeline(start=None, end=None, min_minutes=None, limit=20, offset=0, around=None)
 

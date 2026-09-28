@@ -48,7 +48,7 @@ Funes's Hoard guarda justo lo que el modelo no puede ver: la secuencia de
 ventanas que tenías delante, con el tiempo inactivo y bloqueado, los
 archivos que abriste y los commits que hiciste. Lo convierte en tramos,
 resúmenes del día, bloques de concentración y respuestas para retomar el
-contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
+contexto, y le da al asistente herramientas específicas para consultarlo.
 
 ## Qué está implementado
 
@@ -60,7 +60,7 @@ contexto, y le da al asistente ocho herramientas pequeñas para consultarlo.
 | Conocimiento derivado | Totales por día, semana o rango, por categoría, aplicación y proyecto, recortados en los bordes del periodo; primera y última actividad; cambios de contexto (>= 10 s); bloques de concentración (>= 25 min, cada interrupción <= 2 min); "dónde estaba" con contextos distintos (primero el trabajo; sin música, chats ni juegos salvo que se pida), sus últimos títulos, archivos (primero los del propio proyecto) y commits | La concentración se mide por tiempo en ventana; no dice nada de la atención real |
 | Otras fuentes | Archivos recientes mediante un lector de accesos directos (`.lnk`) escrito a partir de la especificación (rutas Unicode, sufijos de ruta, archivos truncados rechazados); commits de git en las carpetas configuradas, filtrados por los autores indicados o, por defecto, por la identidad git de cada repositorio | No se ven los archivos que no pasan por "Elementos recientes" de Windows |
 | Búsqueda | SQLite FTS5 sobre títulos, rutas de archivo y asuntos de commits, sin distinguir tildes, por prefijo de palabra y a prueba de cualquier entrada; si no aparece nada con todas las palabras, prueba con cualquiera; un resultado de ventana dice cuánto tiempo estuvo abierta y, en la interfaz, abre su día en ese momento | Si el sqlite3 de la plataforma no trae FTS5, se usa una búsqueda `LIKE` (se comprueba al arrancar) |
-| API del agente | Once herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; los ids y las horas se encadenan de una llamada a la siguiente (`activity_timeline(around=<ts de un resultado>)`); todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
+| API del agente | Doce herramientas, de solo lectura salvo una pausa que solo puede alargarse; horas ISO locales y textos legibles en cada resultado; límites pequeños con `has_more`/`next_offset`; los ids y las horas se encadenan de una llamada a la siguiente (`activity_timeline(around=<ts de un resultado>)`); retomar un proyecto concreto alcanza hasta 180 días; todas las llamadas quedan registradas, también las rechazadas | Por diseño, el agente no puede reanudar, cambiar reglas, borrar ni exportar |
 | Memoria de audio | Graba micrófono y audio del sistema, transcribe localmente, importa archivos, busca sesiones, edita notas/etiquetas y exporta TXT/SRT/Markdown. La interfaz **Audio y transcripción** también se puede instalar como PWA | La grabación necesita un dispositivo de audio; la importación funciona sin él |
 | Recall | `recall`/`recall_search` combinan los episodios del escritorio, el audio de Funes, la pantalla de Argus y el portapapeles de Echo en una línea de tiempo citable; se conserva el identificador `[scribe:seg …]` para el audio ([docs/RECALL.md](docs/RECALL.md)) | Argus y Echo necesitan sus apps; el audio funciona dentro de Funes |
 | Modelos compartidos | "Escribe mi día": una narración breve del día en segunda persona ("You spent the morning on..."; el modelo recibe las instrucciones en inglés y suele responder en inglés), guardada y regenerable, a partir de los mismos datos compactos que devuelve `activity_summary` (nunca títulos reales u ocultados); en Ajustes se ve el modelo resuelto, el proveedor y, si no hay ninguno, el motivo en una frase, con un botón para volver a comprobar y ajustes manuales | Solo en la interfaz, no es una herramienta MCP; necesita un modelo de lenguaje accesible por Hoard Link (Faustus, o un servidor Ollama, llama.cpp u otro compatible con OpenAI que ya esté en marcha); un día sin nada registrado se rechaza sin llamar al modelo |
@@ -186,6 +186,7 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | --- | --- | --- |
 | `activity_now` | Aplicación, título y proyecto actuales, segundos de inactividad, si graba o está en pausa (y hasta cuándo) | sí |
 | `activity_where_was_i` | Retomar el contexto: los últimos contextos distintos antes de un momento, con título, archivos y commits | sí |
+| `activity_project_resume` | Retomar un proyecto concreto con ventanas, archivos abiertos y commits, hasta 180 días atrás | sí |
 | `activity_timeline` | Tramos de un día o rango, paginados con `offset` | sí |
 | `activity_summary` | Totales por categoría, aplicación o proyecto, bloques de concentración y cambios de contexto | sí |
 | `activity_search` | Cuándo apareció un título, archivo o commit con ciertas palabras | sí |
@@ -251,7 +252,7 @@ aplicación. Detalles en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   DNS rebinding (una cabecera `Host` que no sea un nombre local con el
   puerto de esta aplicación) y las escrituras desde otros sitios (un
   `Origin` ajeno o `Sec-Fetch-Site: cross-site`); no hay CORS.
-- El asistente solo ve lo que devuelven las ocho herramientas y solo puede
+- El asistente solo ve lo que devuelven sus herramientas y solo puede
   hacer una cosa: pausar (o alargar una pausa). Cada llamada, también las
   rechazadas, se guarda en la tabla de auditoría `agent_calls`
   (herramienta, resumen de argumentos, duración, correcta o con error) y
