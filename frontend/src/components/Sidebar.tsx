@@ -46,9 +46,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">
-          <Clock size={16} />
-        </div>
+        <img className="brand-mark brand-icon" src="/favicon-192.png" alt="" width="32" height="32" />
         <div className="brand-text">
           <h1>{t.appName}</h1>
         </div>

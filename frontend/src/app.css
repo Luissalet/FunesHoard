@@ -793,3 +793,6 @@ th { color: var(--hoard-text-dim); text-transform: none; font-size: 12px; }
 :root[data-theme="light"] .bar-track { background: var(--bg-sidebar); }
 :root[data-theme="light"] .timeline-detail { background: var(--bg); }
 :root[data-theme="light"] .brand-mark { background: linear-gradient(135deg, var(--accent-soft), var(--accent-strong)); color: white; }
+
+/* The app icon as the brand mark (same as the window and taskbar icon). */
+.brand-mark.brand-icon, :root[data-theme="light"] .brand-mark.brand-icon { display: block; width: 32px; height: 32px; padding: 0; border-radius: 8px; background: none; object-fit: cover; flex: none; }
