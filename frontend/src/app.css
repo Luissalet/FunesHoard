@@ -753,3 +753,43 @@ a.btn {
   gap: 5px;
   text-decoration: none;
 }
+
+/* ---- Hoard family chrome (matches the shared look) ---- */
+.sidebar { width: var(--hoard-sidebar-w); padding: 0 12px 12px; }
+.brand { height: var(--hoard-header-h); margin: 0 -12px 12px; padding: 0 16px; border-bottom: 1px solid var(--hoard-border); flex-shrink: 0; }
+.brand-mark { width: 32px; height: 32px; background: var(--hoard-accent); color: var(--hoard-accent-ink); }
+.brand-text h1 { font-family: var(--hoard-font-serif); font-weight: 700; font-size: 15px; color: var(--hoard-accent); }
+.nav-item { height: 40px; padding: 0 12px; font-size: 14px; }
+.nav-item:hover { background: var(--hoard-elevated); }
+.nav-item.active { background: var(--hoard-elevated); color: var(--hoard-text); box-shadow: none; font-weight: 500; }
+.nav-item.active svg { color: var(--hoard-accent); }
+.header { height: var(--hoard-header-h); padding: 0 28px; background: var(--hoard-deep); }
+.header h2 { font-family: var(--hoard-font-sans); font-size: 15px; font-weight: 600; }
+.card { box-shadow: none; }
+.card:hover { border-color: var(--hoard-border-hover); }
+.btn { min-height: 34px; }
+.btn:hover:not(:disabled) { background: var(--hoard-elevated); border-color: var(--hoard-border-hover); }
+.btn-primary { background: var(--hoard-accent); border-color: var(--hoard-accent); color: var(--hoard-accent-ink); font-weight: 600; }
+.btn-primary:hover:not(:disabled) { background: var(--hoard-accent-strong); border-color: var(--hoard-accent-strong); }
+.btn-ghost:hover:not(:disabled) { background: var(--hoard-elevated); border-color: transparent; }
+.btn-danger:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
+input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], input[type="date"], select { background: var(--hoard-surface); }
+input:focus, select:focus { outline: none; border-color: var(--hoard-accent); }
+input::placeholder { color: var(--hoard-text-dim); }
+th { color: var(--hoard-text-dim); text-transform: none; font-size: 12px; }
+.switch input:checked + span { background: var(--hoard-accent); }
+.toggle-tabs { background: var(--hoard-sunken); }
+.timeline-track, .bar-track { background: var(--hoard-sunken); }
+.timeline-detail { background: var(--hoard-deep); }
+
+:root[data-theme="light"] .brand-text h1 { color: var(--text); }
+:root[data-theme="light"] .header { background: var(--bg-elevated); }
+:root[data-theme="light"] .nav-item.active { background: var(--bg-elevated); color: var(--accent-strong); box-shadow: var(--shadow); }
+:root[data-theme="light"] .btn-primary { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
+:root[data-theme="light"] input[type="text"], :root[data-theme="light"] input[type="password"],
+:root[data-theme="light"] input[type="number"], :root[data-theme="light"] input[type="datetime-local"],
+:root[data-theme="light"] input[type="date"], :root[data-theme="light"] select { background: var(--bg); }
+:root[data-theme="light"] .toggle-tabs, :root[data-theme="light"] .timeline-track,
+:root[data-theme="light"] .bar-track { background: var(--bg-sidebar); }
+:root[data-theme="light"] .timeline-detail { background: var(--bg); }
+:root[data-theme="light"] .brand-mark { background: linear-gradient(135deg, var(--accent-soft), var(--accent-strong)); color: white; }

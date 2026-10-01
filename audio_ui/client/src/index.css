@@ -1,47 +1,49 @@
 @import "tailwindcss";
+@import "./hoard-theme.css";
 
-/* Tokens from DESIGN.md — family paper with a deep teal accent. */
+/* Dark by default through the shared Hoard tokens (hoard-theme.css). */
 :root {
-  --accent: #1f6f6b;
-  --accent-hover: #175855;
-  --ink: #23302f;
-  --muted: #64716f;
-  --paper: #f9fbfa;
-  --white: #ffffff;
-  --line: #dfe7e5;
-  --soft: #ebf2f0;
-  --sidebar: #eff4f3;
-  --nav-active: #d9e9e6;
-  --nav-active-ink: #175855;
-  --nav-hover: #e4edeb;
-  --field-line: #cfdcd9;
-  --field-ink: #243c3a;
-  --placeholder: #7a8987;
-  --supporting-ink: #5f6f6d;
-  --focus: #2f8d88;
-  --button-line: #d3dedb;
-  --panel: #f1f6f5;
-  --rec-bg: #fbe9e6;
-  --rec-ink: #8a3a2c;
-  --rec-dot: #c9473a;
-  --proc-bg: #f6efd9;
-  --proc-ink: #7a5a17;
-  --ok-bg: #e2efe9;
-  --ok-ink: #2f5f4a;
-  --danger-bg: #fbeceb;
-  --danger-ink: #8a3a2c;
-  --danger-line: #e8c8c2;
-  --bar-bg: #e3ebe9;
-  --highlight: #f4e7a6;
-  --yo-bg: #e1f0ee;
-  --yo-ink: #175855;
-  --yo-line: #1f6f6b;
-  --otros-bg: #efeaf7;
-  --otros-ink: #4d3f7d;
-  --otros-line: #6a5aa8;
-  --s1-bg: #eef1f0;
-  --s1-ink: #46524f;
-  --s1-line: #8b9997;
+  color-scheme: dark;
+  --accent: var(--hoard-accent);
+  --accent-hover: var(--hoard-accent-strong);
+  --ink: var(--hoard-text);
+  --muted: var(--hoard-text-muted);
+  --paper: var(--hoard-deep);
+  --white: var(--hoard-surface);
+  --line: var(--hoard-border);
+  --soft: var(--hoard-elevated);
+  --sidebar: var(--hoard-surface);
+  --nav-active: var(--hoard-elevated);
+  --nav-active-ink: var(--hoard-text);
+  --nav-hover: var(--hoard-elevated);
+  --field-line: var(--hoard-border);
+  --field-ink: var(--hoard-text);
+  --placeholder: var(--hoard-text-dim);
+  --supporting-ink: var(--hoard-text-muted);
+  --focus: var(--hoard-accent);
+  --button-line: var(--hoard-border);
+  --panel: var(--hoard-sunken);
+  --rec-bg: rgba(226, 104, 90, 0.16);
+  --rec-ink: #f0a198;
+  --rec-dot: #e2685a;
+  --proc-bg: rgba(212, 168, 67, 0.16);
+  --proc-ink: #e3c36f;
+  --ok-bg: rgba(107, 211, 154, 0.14);
+  --ok-ink: #8fdcb2;
+  --danger-bg: rgba(226, 104, 90, 0.14);
+  --danger-ink: #f0a198;
+  --danger-line: rgba(226, 104, 90, 0.4);
+  --bar-bg: var(--hoard-elevated);
+  --highlight: #5a4526;
+  --yo-bg: var(--hoard-accent-soft);
+  --yo-ink: var(--hoard-accent-strong);
+  --yo-line: var(--hoard-accent);
+  --otros-bg: rgba(160, 140, 220, 0.16);
+  --otros-ink: #c3b6ee;
+  --otros-line: #8f7fd0;
+  --s1-bg: var(--hoard-elevated);
+  --s1-ink: var(--hoard-text-muted);
+  --s1-line: var(--hoard-text-dim);
 }
 
 @layer base {
@@ -162,3 +164,42 @@ dialog::backdrop { background: #1a2c2a66; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 }
+
+/* ---- Hoard family chrome (matches the shared look) ---- */
+mark { color: var(--hoard-text); }
+.btn { border-radius: var(--hoard-radius); }
+.btn:hover:not(:disabled) { background: var(--hoard-elevated); border-color: var(--hoard-border-hover); }
+.btn-primary { color: var(--hoard-accent-ink); }
+.btn-primary:hover:not(:disabled) { background: var(--hoard-accent-strong); border-color: var(--hoard-accent-strong); }
+.btn-danger { color: var(--danger-ink); }
+.btn-danger:hover:not(:disabled) { background: rgba(226, 104, 90, 0.24); }
+.btn-record { color: #fff; }
+.btn-record:hover { background: #cf5447; }
+.btn-record .dot { background: #fff; }
+.btn-record.stop { background: var(--hoard-elevated); color: var(--hoard-text); border: 1px solid var(--hoard-border-hover); }
+.btn-record.stop .dot { background: var(--hoard-text); }
+.field { border-radius: var(--hoard-radius); }
+.field:focus { outline: none; border-color: var(--hoard-accent); }
+.panel, .panel-white { border-radius: var(--hoard-radius-lg); }
+.panel-white:hover { border-color: var(--hoard-border-hover); }
+.chip { background: var(--hoard-elevated); border-radius: var(--hoard-radius-sm); }
+.chip-ok { background: var(--ok-bg); }
+.chip-warn { background: var(--proc-bg); }
+.chip-rec { background: var(--rec-bg); }
+.chip-danger { background: var(--danger-bg); }
+.nav-link { height: 40px; border-radius: var(--hoard-radius); color: var(--hoard-text-muted); font-weight: 400; }
+.nav-link:hover { color: var(--hoard-text); }
+.nav-link[aria-current="page"] { color: var(--hoard-text); font-weight: 500; }
+.nav-link[aria-current="page"] svg { color: var(--hoard-accent); }
+.switch::after { background: var(--hoard-text); }
+.toast { background: var(--hoard-elevated); color: var(--hoard-text); border: 1px solid var(--hoard-border-hover); box-shadow: var(--hoard-shadow); }
+dialog { background: var(--hoard-elevated); border: 1px solid var(--hoard-border); box-shadow: var(--hoard-shadow); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.wave .cursor { background: var(--rec-dot); }
+.brand-row { border-bottom: 1px solid var(--hoard-border); }
+.brand-row { flex-wrap: wrap; row-gap: 2px; }
+@media (min-width: 768px) { .brand-row { min-height: var(--hoard-header-h); padding-top: 10px; padding-bottom: 10px; } }
+.brand-name { white-space: nowrap; }
+main h1 { font-family: var(--hoard-font-serif); font-weight: 700; color: var(--hoard-text); }
+.brand-mark { background: var(--hoard-accent) !important; color: var(--hoard-accent-ink) !important; border-radius: 8px !important; }
+.brand-name { font-family: var(--hoard-font-serif); font-weight: 700 !important; color: var(--hoard-accent); }

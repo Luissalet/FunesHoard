@@ -1,23 +1,26 @@
 :root {
-  --font-body: "Source Sans 3 Variable", system-ui, sans-serif;
-  --font-heading: "Source Serif 4 Variable", Georgia, serif;
+  --font-body: "Source Sans 3 Variable", var(--hoard-font-sans);
+  --font-heading: "Source Serif 4 Variable", var(--hoard-font-serif);
 
-  --accent: #6b7593;
-  --accent-soft: #aab4c8;
-  --accent-strong: #4a5578;
-  --on-accent: #ffffff;
+  /* Dark by default, driven by the shared Hoard tokens (hoard-theme.css). */
+  --accent: var(--hoard-accent);
+  --accent-soft: var(--hoard-accent-soft);
+  --accent-strong: var(--hoard-accent-strong);
+  --on-accent: var(--hoard-accent-ink);
   --now: #c98a3e;
   --now-soft: #f0d9b8;
+  --mark-bg: #5a4526;
+  --mark-text: #f6e2c0;
 
-  --bg: #f6f7fa;
-  --bg-elevated: #ffffff;
-  --bg-sidebar: #eef0f5;
-  --text: #1c2029;
-  --text-muted: #5b6272;
-  --border: #dde1ea;
-  --danger: #b3462c;
-  --danger-soft: #f7ded6;
-  --success: #3f7a53;
+  --bg: var(--hoard-deep);
+  --bg-elevated: var(--hoard-surface);
+  --bg-sidebar: var(--hoard-surface);
+  --text: var(--hoard-text);
+  --text-muted: var(--hoard-text-muted);
+  --border: var(--hoard-border);
+  --danger: #e2685a;
+  --danger-soft: rgba(226, 104, 90, 0.14);
+  --success: var(--hoard-success);
 
   /* Category palette: distinct hues at similar lightness so no category
      reads as "empty track"; amber is reserved for the "now" marker. */
@@ -35,42 +38,28 @@
   --mark-bg: #f3dcb6;
   --mark-text: #5a3a0c;
 
-  --radius: 10px;
+  --radius: var(--hoard-radius-lg);
+  --shadow: var(--hoard-shadow);
+}
+
+/* Original light palette, kept as an option (data-theme="light"). */
+:root[data-theme="light"] {
+  --accent: #6b7593;
+  --accent-soft: #aab4c8;
+  --accent-strong: #4a5578;
+  --on-accent: #ffffff;
+  --mark-bg: #f3dcb6;
+  --mark-text: #5a3a0c;
+  --bg: #f6f7fa;
+  --bg-elevated: #ffffff;
+  --bg-sidebar: #eef0f5;
+  --text: #1c2029;
+  --text-muted: #5b6272;
+  --border: #dde1ea;
+  --danger: #b3462c;
+  --danger-soft: #f7ded6;
+  --success: #3f7a53;
   --shadow: 0 1px 2px rgba(20, 24, 32, 0.06), 0 4px 16px rgba(20, 24, 32, 0.04);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --mark-bg: #5a4526;
-    --mark-text: #f6e2c0;
-    --bg: #14161c;
-    --bg-elevated: #1c1f28;
-    --bg-sidebar: #191c24;
-    --text: #e7e9ef;
-    --text-muted: #9aa0b0;
-    --border: #2b2f3b;
-    --accent: #aab4c8;
-    --accent-strong: #c7cede;
-    --on-accent: #14161c;
-    --danger-soft: #3a2420;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.25);
-  }
-}
-
-:root[data-theme="dark"] {
-  --mark-bg: #5a4526;
-  --mark-text: #f6e2c0;
-  --bg: #14161c;
-  --bg-elevated: #1c1f28;
-  --bg-sidebar: #191c24;
-  --text: #e7e9ef;
-  --text-muted: #9aa0b0;
-  --border: #2b2f3b;
-  --accent: #aab4c8;
-  --accent-strong: #c7cede;
-  --on-accent: #14161c;
-  --danger-soft: #3a2420;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
 * {

@@ -92,10 +92,10 @@ export default function App() {
     <AppContext.Provider value={value}>
       <div className="min-h-dvh md:grid md:grid-cols-[224px_minmax(0,1fr)]">
         <aside className="sticky top-0 z-10 border-b md:h-dvh md:border-b-0 md:border-r" style={{ background: "var(--sidebar)", borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-2 px-4 py-3 md:px-5 md:py-5">
-            <span className="grid h-8 w-8 place-items-center rounded-md text-[15px] font-bold text-white" style={{ background: "var(--accent)", fontFamily: "Georgia, serif" }}>S</span>
+          <div className="brand-row flex items-center gap-2 px-4 py-3 md:px-5 md:py-5">
+            <span className="brand-mark grid h-8 w-8 place-items-center rounded-md text-[15px] font-bold text-white" style={{ background: "var(--accent)", fontFamily: "Georgia, serif" }}>S</span>
             <div className="leading-tight">
-              <div className="text-[15px] font-semibold">Funes · Audio</div>
+              <div className="brand-name text-[15px] font-semibold">Funes · Audio</div>
               <div className="help text-[11px]">Grabadora y transcripción</div>
             </div>
             <a className="btn-link ml-auto text-[12px]" href="/">Volver a Funes</a>
