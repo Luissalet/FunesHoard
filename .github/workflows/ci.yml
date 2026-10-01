@@ -22,6 +22,20 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install -r requirements-lock.txt
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: audio_ui/package-lock.json
+
+      # The audio memory app serves its own client; the integration tests open it.
+      - name: Build the audio client
+        working-directory: audio_ui
+        run: |
+          npm ci
+          npm run build
+
       - name: Run tests
         run: .venv/bin/python -m pytest tests/ -q
 
