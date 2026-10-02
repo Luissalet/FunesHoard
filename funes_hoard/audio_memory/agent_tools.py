@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from .export import FORMATS, hms, render
 from .importer import ALLOWED_EXT, MAX_UPLOAD_BYTES
+from .minutes import family_view
 from .services import Services
 from .timeparse import TIME_HELP, iso_local, parse_bound
 
@@ -22,6 +23,7 @@ Speaker labels "yo" and "otros" come from the audio channel (microphone vs. syst
 Never start a recording unless the user explicitly asks for it in the current message. When you start one, say clearly that recording has started and how to stop it (scribe_stop or the app). scribe_delete is permanent: confirm first.
 Prefer scribe_search to find a topic across sessions, then scribe_transcript around the hit for context.
 scribe_minutes gives the minutes (acta) of a transcribed session: summary, decisions, action items and open questions. They were written by a local model and checked against the transcript; every action item carries a literal quote with its time, so cite that quote and time, and say "según el acta" rather than presenting the summary as certain. status "no_model" means no local language model is available: say so, never write minutes yourself as if they were stored ones.
+minutes_get gives the same minutes in a compact shape for other apps (title, date, attendees, action items with owner and due, summary).
 scribe_import_file turns an audio or video file already on this computer into a session (the original is never moved or deleted); with wait_s it waits for the transcript."""
 
 KindArg = Literal["meeting", "interview", "note", "other"]
@@ -89,6 +91,11 @@ class ExportArgs(BaseModel):
 class MinutesArgs(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     regenerate: bool = Field(False, description="Write the minutes again with the model even if some are stored (the old ones are replaced).")
+
+
+class MinutesGetArgs(BaseModel):
+    minutes_id: str = Field(..., min_length=1, max_length=64, description="Id of the meeting session whose minutes you want (the minutes_id of funes.minutes.ready).")
+    generate: bool = Field(True, description="Write the minutes with the local model when none are stored. false only reads what is stored.")
 
 
 class ImportFileArgs(BaseModel):
@@ -230,6 +237,19 @@ def run_minutes(svc: Services, a: MinutesArgs):
     return result
 
 
+def run_minutes_get(svc: Services, a: MinutesGetArgs):
+    """The minutes in the family's shape: title, date, attendees, action items with owner and due, summary."""
+    _require(svc, a.minutes_id)
+    if a.generate:
+        result = svc.minutes.generate(a.minutes_id)
+    else:
+        stored = svc.minutes.get(a.minutes_id)
+        result = {"status": "ready", "cached": True, "minutes": stored} if stored else {"status": "not_generated", "detail": "No minutes are stored for this session; call again with generate=true."}
+    if result.get("status") != "ready" or not result.get("minutes"):
+        return {"ok": False, "status": result.get("status", "error"), "minutes_id": a.minutes_id, "detail": result.get("detail", "")}
+    return {"ok": True, "status": "ready", "cached": bool(result.get("cached")), **family_view(a.minutes_id, result["minutes"])}
+
+
 TRANSCRIPT_TEXT_MAX_CHARS = 60000
 
 
@@ -305,6 +325,7 @@ TOOLS: list[Tool] = [
     Tool("scribe_tag", "Add or remove tags on a session (idempotent: existing tags are kept once).\nSinónimos: etiqueta, etiquetar, categoría, marcar, cliente, proyecto.", TagArgs, _ann(False, False, True), run_tag),
     Tool("scribe_export", "Render a session as text, SRT or Markdown (md includes notes and minutes). Exportar.\nReturns the transcript as plain text, SRT subtitles or Markdown; the Markdown also carries the notes and, when they exist, the minutes.\nSinónimos: exportar, subtítulos, markdown, texto, descargar la transcripción, exportar el acta.", ExportArgs, _ann(True), run_export),
     Tool("scribe_minutes", "Meeting minutes of a session: summary, decisions, action items with evidence. Acta de reunión.\nWrites (or returns the stored) minutes of a transcribed session with the local model: summary, decisions, action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s, speaker, literal quote}}, open questions and participants. Every action item's quote is verified against the transcript and items without one are dropped. status: ready | no_model (no local language model; nothing was invented) | not_ready (still transcribing) | no_speech | error. regenerate=true replaces stored minutes. Long meetings can take minutes.\nSinónimos: acta, minutas, resumen de la reunión, acuerdos, tareas pendientes, qué se acordó, quién se comprometió, compromisos, action items, decisiones.", MinutesArgs, _ann(False, False, True), run_minutes),
+    Tool("minutes_get", "Minutes of a meeting for other apps: title, date, attendees, action items with owner and due, summary.\nReturns the minutes (acta) of a transcribed meeting session in a compact shape: {title, date, attendees: [names], action_items: [{text, owner (yo | a name | empty), counterpart, due (YYYY-MM-DD or null), due_text, quote}], summary, decisions, open_questions}. Writes them with the local model when none are stored (generate=true, the default); status is ready, or no_model, not_ready, no_speech, not_generated. minutes_id is the session id announced by funes.minutes.ready.\nSinónimos: acta, minutas, asistentes, quién estuvo en la reunión, tareas de la reunión, acuerdos, resumen de la reunión.", MinutesGetArgs, _ann(False, False, True), run_minutes_get),
     Tool("scribe_import_file", "Import a local audio/video file as a session and optionally wait for its transcript. Importar audio.\nCreates a session from a file already on this computer, by absolute path (the original is copied, never moved or deleted), and transcribes it in the background. With wait_s > 0 it waits up to that many seconds and returns {session, status, transcript_text} (cut at 60000 characters with next_from_s to continue). Use it to get the text of a recorded class, call or video.\nSinónimos: importar audio, importar vídeo, transcribir un archivo, transcribe este vídeo, pasar a texto, grabación existente, mp3, mp4, subir audio.", ImportFileArgs, _ann(False, False, False), run_import_file),
     Tool("scribe_delete", "Permanently delete a session (only when asked; no undo). Keywords: borrar grabación, eliminar sesión.\nPermanently delete a session: audio, transcript and notes. Only when the user explicitly asks; there is no undo.\nSinónimos: borrar, eliminar, borra la grabación, elimina la reunión, olvidar.", SessionIdArgs, _ann(False, True, True), run_delete),
 ]

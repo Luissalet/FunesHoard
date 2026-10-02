@@ -29,11 +29,11 @@ Reglas para agentes de código que trabajen en este repositorio.
    endpoint, con docstring + línea `Keywords:` en inglés y español.
 4. Si la herramienta escribe algo, pregúntate si de verdad hace falta:
    el contrato es "solo lectura salvo pausar". Si no es pausar, probablemente
-   no debería ser una herramienta del agente. Excepción acordada: las dos
+   no debería ser una herramienta del agente. Excepción acordada: las tres
    herramientas de audio que las demás apps necesitan por el hub,
-   `scribe_minutes` (guarda el acta) y `scribe_import_file` (importa por ruta,
+   `scribe_minutes` y `minutes_get` (guardan el acta) y `scribe_import_file` (importa por ruta,
    sin tocar el original). Grabar, parar y borrar siguen sin estar en esa
-   superficie; `tests/test_security.py` fija la lista exacta (12 + 2).
+   superficie; `tests/test_security.py` fija la lista exacta (12 + 3).
 5. Los errores se lanzan como `BadInput(code, message)` con un mensaje que
    diga qué pasar en su lugar; nunca un 500 por una entrada del modelo.
 6. Actualiza `docs/MCP.md`, `skills/where-was-i/SKILL.md` y el test de

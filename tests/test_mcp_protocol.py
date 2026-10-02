@@ -77,7 +77,7 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
                 "recall", "recall_search", "sources_status",
             } | {"scribe_status", "scribe_sessions", "scribe_transcript", "scribe_search",
                  "scribe_start", "scribe_stop", "scribe_note", "scribe_tag", "scribe_export", "scribe_delete",
-                 "scribe_minutes", "scribe_import_file"}
+                 "scribe_minutes", "minutes_get", "scribe_import_file"}
             pause_tool = next(t for t in tools.tools if t.name == "activity_pause")
             assert pause_tool.annotations.readOnlyHint is False
             now_tool = next(t for t in tools.tools if t.name == "activity_now")

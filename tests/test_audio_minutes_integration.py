@@ -68,15 +68,19 @@ def wait_for(predicate, timeout=20.0):
     raise AssertionError("timed out")
 
 
-def test_family_surface_lists_the_two_audio_tools_with_proper_descriptions(booted):
+def test_family_surface_lists_the_audio_tools_with_proper_descriptions(booted):
     catalogue = booted.client.get("/api/agent/tools").json()
     tools = {t["name"]: t for t in catalogue["tools"]}
-    assert {"scribe_minutes", "scribe_import_file"} <= set(tools)
-    assert len(tools) == 14  # the twelve activity tools plus these two: start/stop/delete stay off the family surface
-    for name in ("scribe_minutes", "scribe_import_file"):
+    assert {"scribe_minutes", "minutes_get", "scribe_import_file"} <= set(tools)
+    assert len(tools) == 15  # the twelve activity tools plus these three: start/stop/delete stay off the family surface
+    for name in ("scribe_minutes", "minutes_get", "scribe_import_file"):
         first = tools[name]["description"].split("\n")[0]
         assert len(first) <= 110 and "Sinónimos:" in tools[name]["description"]
     assert tools["scribe_minutes"]["inputSchema"]["required"] == ["session_id"]
+    assert tools["minutes_get"]["inputSchema"]["required"] == ["minutes_id"]
+    # the family catalogue guesses readOnlyHint from the name; the audio module states the truth: minutes_get may write
+    audio = {t["name"]: t for t in booted.client.get("/audio/api/agent/tools").json()["tools"]}
+    assert audio["minutes_get"]["annotations"]["readOnlyHint"] is False
     assert tools["scribe_import_file"]["inputSchema"]["properties"]["wait_s"]["maximum"] == 3600
 
 
@@ -90,12 +94,49 @@ def test_minutes_through_the_hub_proxy_surface(booted):
     assert call(booted, "scribe_minutes", {"session_id": sid})["cached"] is True
     assert len(booted.link.calls) == 1
     announced = [d for k, d in booted.sent if k == "funes.minutes.ready"]
-    assert announced == [{"session_id": sid, "title": "Reunión de la reforma", "action_items": 1, "started_at": "2026-10-02T10:00:00"}]
+    assert announced == [{"minutes_id": sid, "title": "Reunión de la reforma", "date": "2026-10-02", "attendees": ["Marta", "Pedro"],
+                          "session_id": sid, "action_items": 1, "started_at": "2026-10-02T10:00:00"}]
     # the call is audited like the other agent tools
     calls = booted.client.get("/api/agent-calls").json()["items"]
     assert any(c["tool"] == "scribe_minutes" and c["ok"] == 1 for c in calls)
     missing = call(booted, "scribe_minutes", {"session_id": "nope"}, expect=404)
     assert missing["ok"] is False
+
+
+def test_minutes_get_answers_in_the_shape_other_apps_ask_for(booted):
+    sid = seed(booted)
+    first = call(booted, "minutes_get", {"minutes_id": sid})
+    assert first["ok"] is True and first["status"] == "ready" and first["cached"] is False
+    assert first["minutes_id"] == sid and first["title"] == "Reunión de la reforma" and first["date"] == "2026-10-02"
+    assert first["attendees"] == ["Marta", "Pedro"] and first["summary"] == "Se revisa el presupuesto."
+    assert first["action_items"] == [{
+        "text": "Enviar el presupuesto revisado", "owner": "yo", "counterpart": "Marta", "due": "2026-10-06", "due_text": "el martes",
+        "quote": "yo me encargo de enviar el presupuesto revisado a Marta el martes", "t": "00:06"}]
+    again = call(booted, "minutes_get", {"minutes_id": sid})
+    assert again["cached"] is True and len(booted.link.calls) == 1, "stored minutes cost no model call"
+    announced = [d for k, d in booted.sent if k == "funes.minutes.ready"]
+    assert len(announced) == 1 and announced[0]["minutes_id"] == sid
+    calls = booted.client.get("/api/agent-calls").json()["items"]
+    assert any(c["tool"] == "minutes_get" and c["ok"] == 1 for c in calls)
+
+
+def test_minutes_get_without_generating_and_for_a_session_not_ready(booted):
+    sid = seed(booted)
+    nothing = call(booted, "minutes_get", {"minutes_id": sid, "generate": False})
+    assert nothing["ok"] is False and nothing["status"] == "not_generated" and len(booted.link.calls) == 0
+    busy = seed(booted, status="processing")
+    assert call(booted, "minutes_get", {"minutes_id": busy})["status"] == "not_ready"
+    assert call(booted, "minutes_get", {"minutes_id": "nope"}, expect=404)["ok"] is False
+    booted.link.resolution = type(booted.link.resolution)(capability="llm", provider=None, url=None, model=None, api=None, state="unavailable", reason="nothing loaded", details={})
+    assert call(booted, "minutes_get", {"minutes_id": sid})["status"] == "no_model"
+
+
+def test_attendees_count_named_owners_and_counterparts_but_not_the_user():
+    from funes_hoard.audio_memory.minutes import attendees_of
+    minutes = {"participants": ["Marta"], "action_items": [
+        {"owner": "yo", "counterpart": "Pedro"}, {"owner": "Lucía", "counterpart": "yo"}, {"owner": "marta", "counterpart": ""}]}
+    assert attendees_of(minutes) == ["Marta", "Pedro", "Lucía"]
+    assert attendees_of({}) == []
 
 
 def test_minutes_without_a_model_say_so(booted):

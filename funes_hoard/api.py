@@ -592,8 +592,9 @@ def create_app(
 
     # ------------------------------------------- audio tools for the family --
     # Other Hoards reach Funes through the hub's proxy (POST /api/agent/call), which only
-    # knows this surface. Two audio tools are published on it: meeting minutes (People's
-    # Hoard turns their action items into commitments) and import-by-path (a recipe or
+    # knows this surface. Three audio tools are published on it: meeting minutes in two shapes
+    # (`scribe_minutes` in full, which People's Hoard turns into commitments, and `minutes_get`
+    # in the compact shape the family's rules and apps ask for) and import-by-path (a recipe or
     # class video becomes a transcript for the app that asked). The rest of the audio tools
     # (start, stop, delete...) stay on the stdio bridge, never on the family surface.
     if audio_app is not None:
@@ -626,7 +627,7 @@ def create_app(
             endpoint.__name__ = f"agent_{tool_name}"
             return endpoint
 
-        for _tool in ("scribe_minutes", "scribe_import_file"):
+        for _tool in ("scribe_minutes", "minutes_get", "scribe_import_file"):
             app.add_api_route(f"/api/agent/{_tool}", _scribe_route(_tool), methods=["POST"])
 
     # --------------------------------------------------------- UI routes --

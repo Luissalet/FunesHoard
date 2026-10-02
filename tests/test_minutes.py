@@ -182,7 +182,9 @@ def test_generate_stores_checked_minutes_and_announces_them(env):
     prompt = link.calls[0]["messages"][1]["content"]
     assert "2026-10-02 (viernes)" in prompt and "[00:06] yo: Vale, yo me encargo" in prompt
     assert link.calls[0]["response_format"] == {"type": "json_object"} and link.calls[0]["effort"] in ("low", "medium")
-    assert env.events == [("funes.minutes.ready", {"session_id": sid, "title": "Reunión de la reforma", "action_items": 2, "started_at": "2026-10-02T10:00:00"})]
+    assert env.events == [("funes.minutes.ready", {
+        "minutes_id": sid, "title": "Reunión de la reforma", "date": "2026-10-02", "attendees": ["Marta", "Pedro"],
+        "session_id": sid, "action_items": 2, "started_at": "2026-10-02T10:00:00"})]
 
 
 def test_stored_minutes_are_returned_without_asking_the_model_again(env):

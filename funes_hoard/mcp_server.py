@@ -73,7 +73,8 @@ mcp = FastMCP(
         "scribe_delete permanently removes a session and needs an explicit request. "
         "scribe_minutes returns the minutes (acta) of a transcribed session, written by a local model and "
         "checked against the transcript: cite the quoted evidence and its time, and if status is no_model say "
-        "that no local model is available instead of writing minutes yourself. scribe_import_file turns a local "
+        "that no local model is available instead of writing minutes yourself. minutes_get gives the same minutes in a "
+        "compact shape for other apps (title, date, attendees, action items with owner and due). scribe_import_file turns a local "
         "audio or video file into a session without moving the original."
     ),
 )
@@ -434,6 +435,20 @@ def scribe_minutes(session_id: str, regenerate: bool = False) -> dict:
     Sinónimos: acta, minutas, resumen de la reunión, acuerdos, tareas pendientes, qué se acordó, quién se comprometió, compromisos, action items, decisiones.
     """
     return _audio_call("scribe_minutes", {"session_id": session_id, "regenerate": regenerate}, timeout=1800.0)
+
+
+@mcp.tool(annotations=_IDEMPOTENT_WRITE)
+def minutes_get(minutes_id: str, generate: bool = True) -> dict:
+    """Minutes of a meeting for other apps: title, date, attendees, action items with owner and due, summary.
+
+    Returns the minutes (acta) of a transcribed meeting session in a compact shape: {title, date,
+    attendees: [names], action_items: [{text, owner (yo | a name | empty), counterpart, due (YYYY-MM-DD or null),
+    due_text, quote}], summary, decisions, open_questions}. Writes them with the local model when none are
+    stored (generate=true, the default); status is ready, or no_model, not_ready, no_speech, not_generated.
+    minutes_id is the session id announced by funes.minutes.ready.
+    Sinónimos: acta, minutas, asistentes, quién estuvo en la reunión, tareas de la reunión, acuerdos, resumen de la reunión.
+    """
+    return _audio_call("minutes_get", {"minutes_id": minutes_id, "generate": generate}, timeout=1800.0)
 
 
 @mcp.tool(annotations=_WRITE)

@@ -405,6 +405,60 @@ def _summary_lines(value: Any) -> list[str]:
     return _str_list(value, MAX_SUMMARY_LINES)
 
 
+# ------------------------------------------------------------- family shapes --
+def attendees_of(minutes: dict) -> list[str]:
+    """Names of the people who were in the meeting as far as the minutes know: the participants the transcript names,
+    plus every other person an action item names (owner or counterpart). The user ("yo") is not listed."""
+    seen: set[str] = set()
+    names: list[str] = []
+    candidates = list(minutes.get("participants") or [])
+    for item in minutes.get("action_items") or []:
+        candidates += [item.get("owner") or "", item.get("counterpart") or ""]
+    for raw in candidates:
+        name = _squash(str(raw or ""))[:80]
+        key = name.lower()
+        if not name or key in _ME_WORDS or key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+    return names[:MAX_LIST_ITEMS]
+
+
+def _day_of(started_at: float | None) -> str:
+    return datetime.fromtimestamp(started_at).date().isoformat() if started_at else ""
+
+
+def ready_event(session: dict, minutes: dict) -> dict:
+    """Data of `funes.minutes.ready`. `minutes_id` is the session id (what `minutes_get` takes); `session_id`, `action_items`
+    (a count) and `started_at` are kept for the consumers written before the family contract named it."""
+    return {
+        "minutes_id": session["id"],
+        "title": session["title"][:120],
+        "date": _day_of(session.get("started_at")),
+        "attendees": attendees_of(minutes),
+        "session_id": session["id"],
+        "action_items": len(minutes.get("action_items") or []),
+        "started_at": iso_local(session["started_at"]),
+    }
+
+
+def family_view(session_id: str, minutes: dict) -> dict:
+    """The minutes in the shape other apps ask for (`minutes_get`): {title, date, attendees, action_items: [{text, owner, due...}], summary}."""
+    items = []
+    for item in minutes.get("action_items") or []:
+        ev = item.get("evidence") or {}
+        items.append({
+            "text": item["action"], "owner": item.get("owner") or "", "counterpart": item.get("counterpart") or "",
+            "due": item.get("due_date") or None, "due_text": item.get("due_text") or "",
+            "quote": ev.get("quote", ""), "t": hms(ev.get("start_s", 0)),
+        })
+    return {
+        "minutes_id": session_id, "title": minutes.get("title", ""), "date": _day_of(minutes.get("started_at")),
+        "attendees": attendees_of(minutes), "action_items": items, "summary": minutes.get("summary", ""),
+        "decisions": minutes.get("decisions") or [], "open_questions": minutes.get("open_questions") or [],
+    }
+
+
 # --------------------------------------------------------------------- storage --
 class MinutesStore:
     def __init__(self, db: Database):
@@ -562,10 +616,7 @@ class MinutesService:
             self.store.save(result)
         if self.emit:
             try:
-                self.emit("funes.minutes.ready", {
-                    "session_id": session_id, "title": session["title"][:120],
-                    "action_items": len(result["action_items"]), "started_at": iso_local(session["started_at"]),
-                })
+                self.emit("funes.minutes.ready", ready_event(session, result))
             except Exception:  # noqa: BLE001 - events are hints
                 log.debug("minutes event not sent", exc_info=True)
         return {"status": "ready", "cached": False, "minutes": self.get(session_id)}

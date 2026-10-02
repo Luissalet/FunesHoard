@@ -298,10 +298,31 @@ with `counterpart` "yo"; speaker labels (`otros`, `S1`) are never owners. `evide
 `start_s`, `end_s` and `speaker` come from the transcript segments, not from
 the model. `due_date` is only set when plain rules can work out one day from
 the meeting's date; otherwise only `due_text` is set. Announces
-`funes.minutes.ready {session_id, title, action_items, started_at}` on the
+`funes.minutes.ready {minutes_id, title, date, attendees, session_id, action_items, started_at}` (`minutes_id` is the session id; `session_id`, `action_items` as a count and `started_at` are the older keys, kept) on the
 Hoard Link bus when the minutes are written. Other statuses (all with a
 `detail`): `no_model`, `not_ready` (the session is still being transcribed),
 `no_speech` (nothing was transcribed). An unknown session is a 404.
+
+### minutes_get(minutes_id, generate=True)
+
+The same minutes in the compact shape other apps and the hub's rules ask for.
+`minutes_id` is the session id announced by `funes.minutes.ready`. With
+`generate=true` (the default) it writes the minutes first when none are stored,
+exactly like `scribe_minutes`; with `generate=false` it only reads what is stored.
+
+```json
+{"ok": true, "status": "ready", "cached": true, "minutes_id": "...", "title": "Reunión de la reforma",
+ "date": "2026-10-02", "attendees": ["Marta", "Pedro"], "summary": "...",
+ "action_items": [{"text": "Enviar el presupuesto revisado", "owner": "yo", "counterpart": "Marta",
+                   "due": "2026-10-06", "due_text": "el martes", "quote": "...", "t": "00:06"}],
+ "decisions": [], "open_questions": []}
+```
+
+`attendees` are the participants the transcript names plus every other person an
+action item names; the user (`yo`) is not listed. `owner` is `yo`, a name or empty;
+`due` is a day only when plain rules could work one out. When there are no minutes
+the answer is `{"ok": false, "status": "no_model" | "not_ready" | "no_speech" |
+"not_generated", "detail": "..."}`; an unknown session is a 404.
 
 ### scribe_import_file(path, title="", kind="other", language="auto", wait_s=0)
 
