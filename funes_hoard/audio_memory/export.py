@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from funes_hoard.hoard_link.media.subs import to_srt
+
 FORMATS = ("txt", "srt", "md")
 MIME = {"txt": "text/plain; charset=utf-8", "srt": "application/x-subrip; charset=utf-8", "md": "text/markdown; charset=utf-8"}
 
 
-def hms(seconds: float, millis: bool = False) -> str:
+def hms(seconds: float) -> str:
     seconds = max(0.0, float(seconds))
     hours, rest = divmod(int(seconds), 3600)
     minutes, secs = divmod(rest, 60)
-    if millis:
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{int(round((seconds - int(seconds)) * 1000)):03d}"
     return f"{hours:02d}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
 
 
@@ -31,11 +31,9 @@ def render_txt(session: dict, segments: list[dict]) -> str:
 
 
 def render_srt(session: dict, segments: list[dict]) -> str:
-    blocks = []
-    for index, seg in enumerate(segments, start=1):
-        end = max(seg["end_s"], seg["start_s"] + 0.5)
-        blocks.append(f"{index}\n{hms(seg['start_s'], True)} --> {hms(end, True)}\n{seg['speaker']}: {seg['text']}\n")
-    return "\n".join(blocks) + ("" if blocks else "\n")
+    """SubRip through the family's writer: milliseconds rounded before the fields are split, a cue lasts at least half a second."""
+    cues = [{"start_s": seg["start_s"], "end_s": seg["end_s"], "text": seg["text"], "speaker": seg["speaker"]} for seg in segments]
+    return to_srt(cues, speakers=True, min_duration_s=0.5) or "\n"
 
 
 def render_md(session: dict, segments: list[dict], minutes: dict | None = None) -> str:
