@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
+
+from funes_hoard.hoard_link.media import bins
+from funes_hoard.hoard_link.media.ffmpeg import FFmpeg, FFmpegError
+from funes_hoard.hoard_link.errors import HoardLinkError
 
 from .audio.wav import SAMPLE_RATE, read_wav, write_wav
 from .pipeline import Pipeline
@@ -14,8 +17,23 @@ ALLOWED_EXT = {".wav", ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".flac", ".mp4",
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
 
 
+def _ffmpeg() -> FFmpeg:
+    return FFmpeg()
+
+
+def _has_ffmpeg(ffmpeg: FFmpeg) -> bool:
+    """ffmpeg itself is enough to convert (ffprobe is only needed to measure a duration)."""
+    try:
+        ffmpeg.ffmpeg  # noqa: B018 - raises when the program cannot be found
+    except HoardLinkError:
+        return False
+    return True
+
+
 def ffmpeg_path() -> str | None:
-    return shutil.which("ffmpeg")
+    """Where ffmpeg is: `FUNES_FFMPEG` / `HOARD_FFMPEG`, `$HOARD_HOME/bin`, PATH and the usual install folders (the family's lookup)."""
+    tool = bins.find("ffmpeg", legacy_env=("FUNES_FFMPEG", "SCRIBE_FFMPEG"))
+    return tool.path if tool else None
 
 
 def pyav_available() -> bool:
@@ -27,14 +45,14 @@ def pyav_available() -> bool:
         return False
 
 
-def convert_to_wav(source: Path, target: Path) -> str:
+def convert_to_wav(source: Path, target: Path, ffmpeg: FFmpeg | None = None) -> str:
     """Return the converter used: ffmpeg | pyav | wav."""
-    ffmpeg = ffmpeg_path()
-    if ffmpeg:
-        cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(source), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "wav", str(target)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-        if result.returncode != 0:
-            raise ValueError(f"ffmpeg could not decode the file: {result.stderr.strip()[:300]}")
+    ffmpeg = ffmpeg or _ffmpeg()
+    if _has_ffmpeg(ffmpeg):
+        try:
+            ffmpeg.to_wav16k_mono(source, target)
+        except FFmpegError as error:
+            raise ValueError(f"ffmpeg could not decode the file: {(error.stderr or str(error)).strip()[-300:]}") from error
         return "ffmpeg"
     if pyav_available():
         from faster_whisper.audio import decode_audio
@@ -46,7 +64,7 @@ def convert_to_wav(source: Path, target: Path) -> str:
         samples, _ = read_wav(source)
         write_wav(target, samples)
         return "wav"
-    raise ValueError("Only WAV files can be imported without ffmpeg on PATH.")
+    raise ValueError("Only WAV files can be imported without ffmpeg installed.")
 
 
 class Importer:
