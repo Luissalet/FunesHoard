@@ -253,7 +253,11 @@ class WhisperTranscriber(Transcriber):
         with self.lock:
             try:
                 try:
+                    # faster-whisper returns a lazy generator: the inference (and a
+                    # missing cuBLAS/cuDNN) only happens while iterating it, so
+                    # consume it here where the CPU fallback can catch the error.
                     raw, _info = self._run(audio, language)
+                    raw = list(raw)
                 except Exception as error:
                     # A CUDA library missing at inference time (not at load time) is
                     # the failure seen on Windows without the cuBLAS/cuDNN wheels.
@@ -266,6 +270,7 @@ class WhisperTranscriber(Transcriber):
                         self.model, self.loaded_key = None, None
                         self.ensure_loaded()
                         raw, _info = self._run(audio, language)
+                        raw = list(raw)
                     else:
                         raise
             finally:
