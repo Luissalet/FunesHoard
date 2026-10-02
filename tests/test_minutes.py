@@ -53,6 +53,11 @@ LINES = [
     ("14/11/2026", "2026-11-14"),
     ("a finales de mes", "2026-10-31"),
     ("next monday", "2026-10-05"),
+    ("el día 15", "2026-10-15"),  # a day of the month: this month, else the next one
+    ("el día 1", "2026-11-01"),
+    ("el lunes que viene", "2026-10-05"),
+    ("dentro de un mes", "2026-11-02"),
+    ("el 15 de octubre de 2027", "2027-10-15"),
     ("la semana que viene", None),
     ("cuando pueda", None),
     ("", None),
