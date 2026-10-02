@@ -326,3 +326,10 @@ was found.
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+
+## Shared services (HoardLink 0.8.1)
+
+File transcription is a stateless family service: callers receive text and timed segments without creating recording sessions. The shared Whisper engine uses CPU for subsequent automatic-device jobs after detecting missing CUDA libraries.
+
+The vendored copy is maintained by HoardLink’s sync script. Windows validation and the family service contract are documented in HoardLink’s `docs/commons/windows-validation.md` and `docs/commons/services.md`.

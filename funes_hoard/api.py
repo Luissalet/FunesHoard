@@ -357,7 +357,8 @@ def create_app(
         return await call_next(request)
 
     # DNS rebinding and cross-site writes: the shared guard (host and Origin must name this app, with its exact port).
-    install_guard(app, port_getter=lambda: port, allowed_env="FUNES_ALLOWED_HOSTS", allowed_hosts=allowed_hosts, strict_ports=True)
+    install_guard(app, port_getter=lambda: port, allowed_env="FUNES_ALLOWED_HOSTS", allowed_hosts=allowed_hosts,
+                  strict_ports=True, guard_safe_methods=False)
 
     # ----------------------------------------------------------- errors --
     @app.exception_handler(BadInput)

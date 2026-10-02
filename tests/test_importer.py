@@ -65,5 +65,6 @@ def test_ffmpeg_path_follows_the_family_lookup(tmp_path, monkeypatch):
     monkeypatch.setenv("FUNES_FFMPEG", str(tool))
     from funes_hoard.hoard_link.media import bins
 
-    bins.find("ffmpeg", refresh=True, legacy_env=("FUNES_FFMPEG", "SCRIBE_FFMPEG"))
+    bins.find("ffmpeg", refresh=True, legacy_env=("FUNES_FFMPEG", "SCRIBE_FFMPEG"),
+              runner=lambda argv, timeout: (0, "ffmpeg version 7.0", ""))
     assert importer.ffmpeg_path() == str(tool)
