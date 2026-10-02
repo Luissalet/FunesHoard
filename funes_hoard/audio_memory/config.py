@@ -42,7 +42,13 @@ class Config:
 
     @property
     def models_dir(self) -> Path:
-        return self.models_dir_override or self.data_dir / "models"
+        """SCRIBE_MODELS_DIR, else ``<DATA_DIR>/models`` while a model is already downloaded there, else the family's shared
+        ``$HOARD_HOME/models/whisper`` (one download for every app that transcribes)."""
+        if self.models_dir_override:
+            return self.models_dir_override
+        from .transcribe.whisper import default_models_dir
+
+        return default_models_dir(self.data_dir)
 
     @property
     def token_path(self) -> Path:

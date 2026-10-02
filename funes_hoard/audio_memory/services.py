@@ -44,7 +44,6 @@ class Services:
         self.started_at = time.time()
         config.data_dir.mkdir(parents=True, exist_ok=True)
         config.sessions_dir.mkdir(parents=True, exist_ok=True)
-        config.models_dir.mkdir(parents=True, exist_ok=True)
         self.token = write_token(config)
         self.db = Database(config.db_path)
         self.settings = SettingsStore(self.db)
