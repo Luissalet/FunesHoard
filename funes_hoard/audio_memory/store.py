@@ -10,6 +10,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from funes_hoard.hoard_link.docs import textsearch
+
 from .db import Database
 from .merge import Labelled
 
@@ -24,14 +26,9 @@ def new_session_id(now: float | None = None) -> str:
 
 
 def fts_query(raw: str) -> str:
-    """Safe FTS5 MATCH expression: quoted tokens, implicit AND, prefix on the last."""
-    tokens = [t for t in re.findall(r"[\w'’\-]+", raw, flags=re.UNICODE) if t.strip("-'’")]
-    if not tokens:
-        return ""
-    parts = [f'"{t.replace(chr(34), "")}"' for t in tokens]
-    if len(tokens[-1]) >= 3:
-        parts[-1] += "*"
-    return " ".join(parts)
+    """Safe FTS5 MATCH expression (the family's `textsearch`): every content word quoted, stopwords dropped, words of 3+ letters match
+    as prefixes of their stem, so «reuniones» also finds «reunión»."""
+    return textsearch.fts_query(raw, mode="prefix")
 
 
 def normalize_tags(tags) -> list[str]:
