@@ -313,7 +313,7 @@ the images in `docs/media/`.
 - **No browser address-bar reader:** a title rule decides streaming vs.
   browsing, so a video on a site the rule does not know stays Browsing with
   the ordinary idle threshold.
-- **Minutes are only as good as the transcript and the model.** Quotes are checked against the transcript and an action item without a verifiable quote is dropped, so a smaller model gives shorter minutes, not invented ones. Owners are "yo" (the person who recorded) or a name that appears in the transcript; a speaker label the app cannot tell apart is not turned into a name.
+- **Minutes are only as good as the transcript and the model.** Quotes are checked against the transcript and an action item without a verifiable quote is dropped, so a smaller model gives shorter minutes, not invented ones. Owners are "yo" (the person who recorded), a name that appears in the transcript, or empty. They are read from the words of the quote (a first-person promise on a single track is the user's; "Marta me tiene que devolver…" belongs to Marta), never copied from a speaker label such as `otros` or `S1`.
 - "Where was I?" looks three days back; after a longer absence it says
   there is nothing to pick up.
 - The Models panel shows the backend's diagnostic reason in English in both

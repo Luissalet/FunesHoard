@@ -289,8 +289,12 @@ invents nothing.
              "model": "...", "created_at": "..."}}
 ```
 
-`owner` is `"yo"` (the person who recorded) or a name that appears in the
-transcript. `evidence.quote` is always a literal piece of the transcript;
+`owner` is `"yo"` (the person who recorded), a name that appears in the
+transcript, or empty when nobody is named. It is worked out from the words of
+the quote, not copied from the model: a first-person promise ("me encargo",
+"te lo mando", "I'll send") is the user's when the line is the user's or there
+is a single track; a named subject ("Marta me tiene que devolver…") owns it,
+with `counterpart` "yo"; speaker labels (`otros`, `S1`) are never owners. `evidence.quote` is always a literal piece of the transcript;
 `start_s`, `end_s` and `speaker` come from the transcript segments, not from
 the model. `due_date` is only set when plain rules can work out one day from
 the meeting's date; otherwise only `due_text` is set. Announces

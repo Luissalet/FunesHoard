@@ -62,15 +62,16 @@ SYSTEM_PROMPT = (
     "task, a date or a decision. An action item is something somebody explicitly commits to do (or is asked to do "
     "and accepts). For each one give `quote`: the exact words from the transcript that show the commitment, copied "
     "character by character from one or two consecutive lines, without the timestamp or the speaker label. "
-    "`owner` is `yo` when the user commits (a line from `yo` like \"me encargo\", \"te lo mando\"), otherwise the name as "
-    "spoken, or `otros` when someone from the other side commits without a name being said. `counterpart` is who it "
+    "`owner` is `yo` when the user commits (the user says \"me encargo\", \"te lo mando\", \"I'll send\"; on a single "
+    "track `S1` a first-person promise is the user's), otherwise the name of the person as spoken, or null when "
+    "nobody is named. Never use a speaker label (`otros`, `S1`, `S2`) as an owner or counterpart. `counterpart` is who it "
     "is for, if said (`yo` when the other side promises something to the user). `due_text` is the deadline in the "
     "words used (\"el viernes\"), `due_date` only if it is an exact calendar day you can compute from the meeting "
     "date given, otherwise null. Return a single JSON object and nothing else."
 )
 
 SCHEMA_HINT = (
-    '{"summary": ["short line", "..."], "decisions": ["..."], "action_items": [{"owner": "yo|name|otros", '
+    '{"summary": ["short line", "..."], "decisions": ["..."], "action_items": [{"owner": "yo|name|null", '
     '"action": "what will be done", "counterpart": "name or null", "due_date": "YYYY-MM-DD or null", '
     '"due_text": "words used or null", "quote": "exact words from the transcript"}], '
     '"open_questions": ["..."], "participants": ["names mentioned"]}'
@@ -158,6 +159,10 @@ class Transcript:
         self._lower = lowered if len(lowered) == len(self._joined) else None
 
     @property
+    def speakers(self) -> set[str]:
+        return {seg["speaker"] for seg in self.segments}
+
+    @property
     def chars(self) -> int:
         return sum(len(line) + 1 for line in self.lines)
 
@@ -220,16 +225,121 @@ class Transcript:
 
 
 # ------------------------------------------------------------------ validation --
-def _clean_owner(value: Any, transcript: Transcript) -> str:
+_LABEL = re.compile(r"^(?:s\d+|speaker\s*\d*|hablante\s*\d*|spk\s*\d*|track\s*\d*|pista\s*\d*)$", re.IGNORECASE)
+_NULLISH = {"null", "none", "unknown", "desconocido", "n/a", "nadie", "alguien", "someone", "nobody", "anyone"}
+
+
+def _clean_name(value: Any, transcript: Transcript, allow_me: bool = True) -> str:
+    """A person as the minutes may name one: "yo", or a name said in the transcript. Speaker labels are never people."""
     text = _squash(str(value or ""))[:80]
     low = text.lower()
     if low in _ME_WORDS:
-        return OWNER_ME
-    if low in _OTHERS_WORDS:
-        return OWNER_OTHERS
-    if not text or low in ("null", "none", "unknown", "desconocido", "n/a"):
+        return OWNER_ME if allow_me else ""
+    if not text or low in _NULLISH or low in _OTHERS_WORDS or _LABEL.match(text):
+        return ""
+    if low in {s.lower() for s in transcript.speakers}:
         return ""
     return text if transcript.contains_name(text) else ""
+
+
+def _clean_owner(value: Any, transcript: Transcript) -> str:  # kept for callers that only need the plain rule
+    return _clean_name(value, transcript)
+
+
+# Who is speaking in a quote, worked out from its words. The model tends to copy speaker labels ("otros", "S1")
+# into the owner, so what the words say wins over what the model answered.
+_NAME = r"[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+(?:\s+(?:(?:de|del|la)\s+)?[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+)*"
+_PROMISE_VERBS = (
+    r"env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|llamo|llamar[eé]|escribo|escribir[eé]|preparo|preparar[eé]|"
+    r"traigo|traer[eé]|devuelvo|devolver[eé]|entrego|entregar[eé]|aviso|avisar[eé]|confirmo|confirmar[eé]|doy|dar[eé]|"
+    r"reviso|revisar[eé]|hago|har[eé]|pago|pagar[eé]|pido|pedir[eé]|busco|buscar[eé]|redacto|presento|organizo|reservo|contacto"
+)
+FIRST_PERSON = re.compile(
+    r"(?<!\w)(?:"
+    r"(?:yo\s+)?me\s+(?:encargo|comprometo|toca|ocupo|hago\s+cargo|pongo|apunto|llevo|quedo|voy)\b"
+    rf"|(?:yo\s+)?(?:se\s+lo\s+|se\s+la\s+|lo\s+|la\s+|le\s+|te\s+|les\s+|os\s+|nos\s+)(?:{_PROMISE_VERBS})\b"
+    rf"|yo\s+(?:voy\s+a|(?:{_PROMISE_VERBS})|\w+é)\b"
+    r")",
+    re.IGNORECASE,
+)
+# English "I" must be a capital I, so it is checked apart from the case-insensitive Spanish pattern.
+_ENGLISH_I = re.compile(r"\bI(?:'ll|\s+will|\s+shall|'m\s+going\s+to|\s+am\s+going\s+to|\s+can\s+take|\s+have\s+to|\s+need\s+to|\s+must)\b")
+_NOT_NAMES = {
+    "yo", "vale", "bueno", "entonces", "pues", "si", "sí", "que", "el", "la", "los", "las", "un", "una", "hay", "hoy", "mañana",
+    "luego", "después", "primero", "y", "pero", "así", "eso", "esto", "lo", "se", "me", "te", "no", "ok", "okay", "tú", "usted",
+    "nosotros", "ellos", "ella", "él", "i", "we", "the", "then", "so", "well", "tomorrow", "today", "also", "and", "but", "he", "she",
+    "they", "you", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo", "monday", "tuesday", "wednesday",
+    "thursday", "friday", "saturday", "sunday", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+    "septiembre", "octubre", "noviembre", "diciembre", "muy", "ya", "ahora", "bien", "gracias", "perfecto", "claro",
+}
+_PREDICATE = re.compile(
+    r"^\s*(?:,\s*)?(?:me|nos|te|le|les|se|va|vamos|van|tiene|tienen|debe|deben|puede|pueden|quiere|quieren|ha|han|ya|también|"
+    r"dijo|dice|prometió|promete|\w+(?:ará|erá|irá|aré)|will|would|is\s+going|has\s+to|needs\s+to|must|should|can|'ll)\b"
+    r"|^\s*\w{4,}(?:a|e|an|en)\s+(?:el|la|los|las|un|una|lo|su|mis|mi|este|esta|todo)\b",
+    re.IGNORECASE,
+)
+_PREPOSITIONS = {"a", "para", "con", "de", "del", "por", "en", "sobre", "hacia", "desde", "le", "la", "al", "to", "for", "with", "from", "by"}
+
+
+def _speaks_as_user(speaker: str, transcript: Transcript) -> bool:
+    """A first-person promise is the user's when the line is the user's, or when there is only one track to tell apart."""
+    return speaker == OWNER_ME or len(transcript.speakers) <= 1
+
+
+def _subject_name(quote: str) -> str:
+    """A capitalised name that is the subject of the sentence ("Marta Ficticia me tiene que devolver..."), or ""."""
+    for match in re.finditer(_NAME, quote):
+        name = match.group(0)
+        words = name.split()
+        while words and words[0].lower() in _NOT_NAMES:
+            words.pop(0)
+        if not words:
+            continue
+        name = " ".join(words)
+        before = quote[:match.start()].rstrip()
+        previous = re.findall(r"[\wáéíóúñü']+|[,.;:]", before)[-1:] or [""]
+        if previous[0].lower() in _PREPOSITIONS:
+            continue
+        if _PREDICATE.search(quote[match.end():]):
+            return name
+    return ""
+
+
+def _object_name(quote: str) -> str:
+    """A capitalised name the promise is for ("... a Marta el martes"), or ""."""
+    for match in re.finditer(rf"(?<![\wáéíóúñü])(?:a|para|con|to|for|with)\s+({_NAME})", quote):
+        words = match.group(1).split()
+        while words and words[0].lower() in _NOT_NAMES:
+            words.pop(0)
+        if words:
+            return " ".join(words)
+    return ""
+
+
+def infer_owner(entry: dict, evidence: dict, transcript: Transcript) -> tuple[str, str]:
+    """(owner, counterpart) for an action item. Words beat labels: see the notes above."""
+    quote = evidence["quote"]
+    speaker = evidence["speaker"]
+    model_owner = _clean_name(entry.get("owner"), transcript)
+    model_counterpart = _clean_name(entry.get("counterpart"), transcript)
+    me_ok = all(_speaks_as_user(part, transcript) for part in speaker.split("+"))
+    first = bool(FIRST_PERSON.search(quote) or _ENGLISH_I.search(quote))
+    if first and me_ok:
+        counterpart = model_counterpart if model_counterpart not in ("", OWNER_ME) else _object_name(quote)
+        return OWNER_ME, counterpart if counterpart != OWNER_ME else ""
+    subject = _subject_name(quote)
+    if subject:
+        aimed_at_me = bool(re.search(r"\b(?:me|nos)\s+(?:\w+\s+){0,3}?(?:tiene|tienen|debe|deben|va|van|puede|pueden|\w+(?:ará|erá|irá|aré))", quote, re.IGNORECASE)) \
+            or bool(re.search(r"\b(?:me|nos)\s+\w+", quote[quote.find(subject) + len(subject):quote.find(subject) + len(subject) + 12], re.IGNORECASE))
+        counterpart = OWNER_ME if aimed_at_me or model_counterpart == OWNER_ME else (model_counterpart if model_counterpart.lower() != subject.lower() else "")
+        return subject, counterpart
+    owner = model_owner
+    if first and not me_ok and owner == OWNER_ME:
+        owner = ""  # somebody else's "I": the user did not say it
+    counterpart = model_counterpart
+    if counterpart and counterpart.lower() == owner.lower():
+        counterpart = ""
+    return owner, counterpart
 
 
 def validate_action_items(raw: Any, transcript: Transcript, meeting_day: date) -> tuple[list[dict], int]:
@@ -261,9 +371,9 @@ def validate_action_items(raw: Any, transcript: Transcript, meeting_day: date) -
         # A model date earlier than the meeting is a misreading of the year, not a deadline.
         if due_date and due_date < meeting_day.isoformat():
             due_date = None
-        counterpart = _clean_owner(entry.get("counterpart"), transcript)
+        owner, counterpart = infer_owner(entry, evidence, transcript)
         items.append({
-            "owner": _clean_owner(entry.get("owner"), transcript),
+            "owner": owner,
             "action": action,
             "counterpart": counterpart,
             "due_date": due_date,

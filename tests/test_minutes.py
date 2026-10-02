@@ -386,3 +386,93 @@ def test_settings_have_auto_minutes_on_by_default(env):
     assert env.settings.get().auto_minutes is True
     assert env.settings.update({"auto_minutes": False}).auto_minutes is False
     assert json.loads(env.db.conn.execute("SELECT value FROM settings WHERE key = 'auto_minutes'").fetchone()[0]) is False
+
+
+# ------------------------------------------------------- who is committing --
+SINGLE_TRACK = [
+    (0, 8, "S1", "Buenas, repasamos el contrato de la obra."),
+    (8, 17, "S1", "Yo me encargo de enviarle el presupuesto a Marta Ficticia el martes que viene."),
+    (17, 26, "S1", "Marta Ficticia me tiene que devolver el contrato firmado antes del viernes."),
+    (26, 34, "S1", "Pedro Gil prepara el informe de costes para el lunes."),
+    (34, 42, "S1", "Luego tú llamas al gremio mañana, ¿vale?"),
+    (42, 50, "S1", "I'll send the invoice to Anna tomorrow."),
+]
+
+
+def _item(owner, action, quote, counterpart=None, **extra):
+    return {"owner": owner, "action": action, "counterpart": counterpart, "quote": quote, **extra}
+
+
+def _owners(env, items, lines=SINGLE_TRACK):
+    sid = make_session(env, lines)
+    link = ScriptedLink([{"summary": ["x"], "decisions": [], "action_items": items, "open_questions": [], "participants": []}])
+    result = service(env, link).generate(sid)
+    return {i["action"]: (i["owner"], i["counterpart"]) for i in result["minutes"]["action_items"]}
+
+
+def test_a_first_person_promise_on_a_single_track_is_the_users_even_if_the_model_says_otros(env):
+    owners = _owners(env, [
+        _item("otros", "Enviar el presupuesto", "Yo me encargo de enviarle el presupuesto a Marta Ficticia el martes que viene", "Marta Ficticia"),
+        _item("S1", "Enviar el presupuesto sin contraparte", "me encargo de enviarle el presupuesto a Marta Ficticia"),
+        _item("otros", "Mandar la factura", "I'll send the invoice to Anna tomorrow"),
+    ])
+    assert owners["Enviar el presupuesto"] == ("yo", "Marta Ficticia")
+    assert owners["Mandar la factura"] == ("yo", "Anna")  # the counterpart is read from the words when the model gave none
+    assert owners["Enviar el presupuesto sin contraparte"] == ("yo", "Marta Ficticia")
+
+
+def test_another_named_person_as_the_subject_owns_it_and_the_user_is_the_counterpart(env):
+    owners = _owners(env, [
+        _item("otros", "Devolver el contrato", "Marta Ficticia me tiene que devolver el contrato firmado antes del viernes", "yo"),
+        _item("S1", "Devolver el contrato (sin ayuda del modelo)", "Marta Ficticia me tiene que devolver el contrato firmado"),
+        _item("otros", "Preparar el informe", "Pedro Gil prepara el informe de costes para el lunes"),
+    ])
+    assert owners["Devolver el contrato"] == ("Marta Ficticia", "yo")
+    assert owners["Devolver el contrato (sin ayuda del modelo)"] == ("Marta Ficticia", "yo")
+    assert owners["Preparar el informe"] == ("Pedro Gil", "")
+
+
+def test_speaker_labels_are_never_owners_or_counterparts(env):
+    owners = _owners(env, [
+        _item("otros", "Llamar al gremio", "tú llamas al gremio mañana", "S1"),
+        _item("S1", "Otra cosa", "Luego tú llamas al gremio", "otros"),
+        _item("Speaker 2", "Una más", "llamas al gremio mañana"),
+    ])
+    assert owners["Llamar al gremio"] == ("", "")
+    assert owners["Otra cosa"] == ("", "")
+    assert owners["Una más"] == ("", "")
+
+
+def test_with_a_user_track_someone_elses_first_person_is_not_the_users(env):
+    lines = [
+        (0, 8, "yo", "Vale, me comprometo a mandar el plan de obra."),
+        (8, 16, "otros", "Yo preparo el informe de costes para el viernes."),
+        (16, 24, "otros", "Pedro llamará al gremio el lunes."),
+    ]
+    owners = _owners(env, [
+        _item("yo", "Mandar el plan", "me comprometo a mandar el plan de obra"),
+        _item("yo", "Preparar el informe", "Yo preparo el informe de costes para el viernes"),
+        _item("otros", "Preparar el informe 2", "preparo el informe de costes para el viernes"),
+        _item("otros", "Llamar al gremio", "Pedro llamará al gremio el lunes"),
+    ], lines)
+    assert owners["Mandar el plan"][0] == "yo"
+    assert owners["Preparar el informe"][0] == "" and owners["Preparar el informe 2"][0] == ""  # an unnamed other person
+    assert owners["Llamar al gremio"][0] == "Pedro"
+
+
+@pytest.mark.parametrize("quote", [
+    "Yo me encargo de enviar el presupuesto", "me encargo del informe", "me comprometo a mandarlo", "me toca llamar al gremio",
+    "yo le envío el documento", "te mando el contrato hoy", "les paso las fotos", "yo preparo la memoria", "yo llamaré a Marta",
+    "I'll send it tomorrow", "I will call him", "I'm going to write the report",
+])
+def test_first_person_promises_are_recognised(quote):
+    from funes_hoard.audio_memory.minutes import FIRST_PERSON, _ENGLISH_I
+
+    assert FIRST_PERSON.search(quote) or _ENGLISH_I.search(quote)
+
+
+@pytest.mark.parametrize("quote", ["Marta prepara el informe", "Pedro llamará al gremio", "ella te lo manda mañana", "se envía el lunes"])
+def test_third_person_statements_are_not_first_person(quote):
+    from funes_hoard.audio_memory.minutes import FIRST_PERSON, _ENGLISH_I
+
+    assert not (FIRST_PERSON.search(quote) or _ENGLISH_I.search(quote))

@@ -335,7 +335,7 @@ repiten los casos de uso en el navegador y por MCP;
   sobre el título decide si algo es streaming o navegación, así que un
   vídeo en un sitio que la regla no conoce sigue siendo navegación, con el
   umbral de inactividad normal.
-- **Las actas valen lo que valgan la transcripción y el modelo.** Las citas se comprueban contra la transcripción y una tarea sin cita verificable se descarta, así que un modelo pequeño da actas más cortas, no inventadas. Los responsables son «yo» (quien grabó) o un nombre que aparece en la transcripción; una etiqueta de hablante que la aplicación no distingue no se convierte en un nombre.
+- **Las actas valen lo que valgan la transcripción y el modelo.** Las citas se comprueban contra la transcripción y una tarea sin cita verificable se descarta, así que un modelo pequeño da actas más cortas, no inventadas. Los responsables son «yo» (quien grabó), un nombre que aparece en la transcripción o ninguno. Se leen de las palabras de la cita (una promesa en primera persona en una sola pista es del usuario; «Marta me tiene que devolver…» es de Marta), nunca se copian de una etiqueta de hablante como `otros` o `S1`.
 - "¿Dónde lo dejé?" mira tres días atrás; tras una ausencia más larga dice
   que no hay nada que retomar.
 - El panel de Modelos muestra el motivo técnico del backend en inglés en
