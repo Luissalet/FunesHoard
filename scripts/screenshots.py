@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import urllib.request
 from pathlib import Path
 
@@ -25,9 +26,11 @@ MEDIA_DIR = REPO_ROOT / "docs" / "media"
 def _agent(base: str, tool: str, args: dict) -> None:
     """Call the agent API the way the MCP adapter does, so the "Assistant
     activity" screen shows real audited calls (including a rejected one)."""
+    token_file = Path(os.environ.get("FUNES_TOKEN_FILE") or REPO_ROOT / "data-demo" / "mcp-token")
+    token = token_file.read_text(encoding="utf-8").strip() if token_file.is_file() else ""
     req = urllib.request.Request(
         f"{base}/api/agent/{tool}", data=json.dumps(args).encode("utf-8"),
-        headers={"Content-Type": "application/json"}, method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}, method="POST",
     )
     try:
         urllib.request.urlopen(req, timeout=10).read()

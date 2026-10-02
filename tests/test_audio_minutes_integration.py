@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 
 import pytest
+from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
@@ -41,6 +42,7 @@ def booted(tmp_path, monkeypatch):
     link = ScriptedLink([MINUTES])
     app = create_app(tmp_path / "data", None, demo=True, port=18861, link=link)
     with TestClient(app, base_url="http://127.0.0.1:18861") as client:
+        client.headers.update(agent_headers())
         audio = app.state.audio_app.state.services
         family_headers = {"Authorization": "Bearer " + open(family.status()["token_file"], encoding="utf-8").read().strip()}
         yield type("Booted", (), {"client": client, "audio": audio, "link": link, "sent": sent, "headers": family_headers, "tmp": tmp_path, "real_emit": real_emit})

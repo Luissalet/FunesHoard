@@ -6,6 +6,7 @@ import time
 
 import httpx
 import uvicorn
+from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
@@ -18,6 +19,7 @@ def test_embedded_audio_status_and_agent_tools(tmp_path, monkeypatch):
     monkeypatch.setenv("SCRIBE_TRANSCRIBER", "fake")
     app = create_app(tmp_path, None, demo=True, port=18877, link_factory=FakeLink)
     with TestClient(app, base_url="http://127.0.0.1:18877") as client:
+        client.headers.update(agent_headers())
         assert client.get("/api/health").json()["service"] == "funes-hoard"
         status = client.get("/audio/api/status")
         assert status.status_code == 200, status.text
@@ -40,6 +42,7 @@ def test_audio_session_tools_change_embedded_state(tmp_path, monkeypatch):
     monkeypatch.setenv("SCRIBE_TRANSCRIBER", "fake")
     app = create_app(tmp_path, None, demo=True, port=18878, link_factory=FakeLink)
     with TestClient(app, base_url="http://127.0.0.1:18878") as client:
+        client.headers.update(agent_headers())
         store = app.state.audio_app.state.services.sessions
         created = store.create("Reunión de prueba", "meeting", True, False, "es", status="done")
         sid = created["id"]

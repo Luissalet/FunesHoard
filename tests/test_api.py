@@ -1,4 +1,5 @@
 import pytest
+from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
@@ -8,6 +9,7 @@ from funes_hoard.api import create_app
 def client(demo_data_dir):
     app = create_app(demo_data_dir, None, demo=True, port=18831)
     with TestClient(app, base_url="http://127.0.0.1:18831") as c:
+        c.headers.update(agent_headers())
         yield c
 
 

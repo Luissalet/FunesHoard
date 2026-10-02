@@ -34,6 +34,7 @@ from funes_hoard.errors import BadInput
 from funes_hoard.git_watch import GitCommitsPoller, configured_authors
 from funes_hoard.hoard_link import BackendError, Link, Unavailable
 from funes_hoard.hoard_link import family
+from funes_hoard.hoard_link.tokens import check_bearer, read_token
 from funes_hoard.jobs import JobManager
 from funes_hoard.recall import recall as run_recall
 from funes_hoard.recall import recall_search as run_recall_search
@@ -375,6 +376,17 @@ def create_app(
     app.state.audio_error = audio_error
 
     # ------------------------------------------------------------ guard --
+    # The per-tool routes (POST /api/agent/<tool>) answer to the same Bearer token as /api/agent/call: before, any local process that
+    # passed the host guard could run a tool (activity_pause, scribe_import_file...) without it. /tools stays open (the catalogue is
+    # not a secret) and /call checks the token itself.
+    @app.middleware("http")
+    async def agent_token_guard(request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/api/agent/") and path not in ("/api/agent/tools", "/api/agent/call") and request.method != "OPTIONS":
+            if not check_bearer(request.headers.get("authorization"), read_token(Path(data_dir) / "mcp-token")):
+                return _error(401, "unauthorized", "Send the Bearer token from data/mcp-token.")
+        return await call_next(request)
+
     @app.middleware("http")
     async def browser_attack_guard(request: Request, call_next):
         # DNS rebinding: a hostile page whose domain resolves to 127.0.0.1

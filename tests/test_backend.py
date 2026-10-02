@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard import backend
@@ -72,6 +73,7 @@ def app_link(demo_data_dir):
     link = FakeLink(LinkConfig(app="funes"))
     app = create_app(demo_data_dir, None, demo=True, port=PORT, link=link, link_factory=lambda cfg: FakeLink(cfg))
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
+        c.headers.update(agent_headers())
         yield c, link, demo_data_dir
 
 

@@ -29,3 +29,11 @@ def demo_data_dir(tmp_path, _demo_template):
     data.mkdir()
     shutil.copy2(_demo_template, data / "funes.sqlite3")
     return data
+
+
+def agent_headers() -> dict:
+    """The Bearer header of the app created last: the per-tool /api/agent/<tool> routes need it, like /api/agent/call."""
+    from funes_hoard.hoard_link import family
+
+    with open(family.status()["token_file"], encoding="utf-8") as fh:
+        return {"Authorization": "Bearer " + fh.read().strip()}
