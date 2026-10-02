@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
+import Minutes from "../components/Minutes.jsx";
 import Player from "../components/Player.jsx";
 import Transcript from "../components/Transcript.jsx";
 import { Confirm, PageHeader, StatusChip } from "../components/ui.jsx";
@@ -16,7 +17,7 @@ function Editable({ value, onCommit, className = "field", as = "input", ...props
 }
 
 export default function Sesion() {
-  const { route, act, status, stopRecording } = useApp();
+  const { route, act, status, stopRecording, notify } = useApp();
   const id = route.id;
   const [session, setSession] = useState(null);
   const [missing, setMissing] = useState(false);
@@ -84,6 +85,7 @@ export default function Sesion() {
         <div className="grid gap-4">
           {session.status === "done" && <Player sessionId={id} duration={session.duration_s} seekTo={seek} onTime={setTime} />}
           {session.status === "processing" && <div className="banner banner-processing">Transcribiendo la sesión completa… el texto provisional se sustituirá al terminar.</div>}
+          <Minutes sessionId={id} sessionDone={session.status === "done"} onSeek={(t) => setSeek({ t })} notify={notify} />
           <section className="panel-white">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-[17px] font-semibold">Transcripción</h2>

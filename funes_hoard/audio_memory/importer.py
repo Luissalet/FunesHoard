@@ -53,14 +53,18 @@ class Importer:
     def __init__(self, store: SessionStore, pipeline: Pipeline):
         self.store, self.pipeline = store, pipeline
 
-    def import_file(self, source: Path, filename: str, title: str = "", kind: str = "other", language: str = "auto") -> dict:
+    def import_file(self, source: Path, filename: str, title: str = "", kind: str = "other", language: str = "auto", keep_source: bool = False) -> dict:
+        """`keep_source` copies the file instead of moving it: used when the caller owns it (import by path)."""
         ext = Path(filename).suffix.lower()
         if ext not in ALLOWED_EXT:
             raise ValueError(f"Unsupported file type: {ext or '(none)'}")
         session = self.store.create(title or Path(filename).stem, kind, mic=True, system=False, language=language, origin="import", status="processing")
         folder = self.store.session_dir(session["id"])
         original = folder / f"original{ext}"
-        shutil.move(str(source), original)
+        if keep_source:
+            shutil.copy2(source, original)
+        else:
+            shutil.move(str(source), original)
         try:
             convert_to_wav(original, folder / "audio.wav")
         except Exception as error:

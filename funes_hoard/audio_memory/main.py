@@ -21,12 +21,13 @@ from funes_hoard.hoard_link import family
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
-def create_app(config: Config | None = None) -> FastAPI:
+def create_app(config: Config | None = None, link_provider=None, emit=None) -> FastAPI:
+    """`link_provider` returns the host app's Hoard Link, used to write meeting minutes; `emit` overrides family.emit (tests)."""
     config = config or Config.from_env()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        services = Services(config)
+        services = Services(config, link_provider=link_provider, emit=emit)
         app.state.services = services
         services.start()
         logging.getLogger("funes_hoard.audio_memory").info("Funes audio %s — data in %s", __version__, config.data_dir)

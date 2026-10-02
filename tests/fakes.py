@@ -59,3 +59,40 @@ def resolved_llm(model: str = "qwen3.8-27b-q8-llamacpp", provider: str = "llamac
 
 def chat_text(text: str, model: str = "qwen3.8-27b-q8-llamacpp") -> ChatResult:
     return ChatResult(text=text, model=model, provider="llamacpp", usage=Usage(), elapsed_ms=12.0)
+
+
+class _SyncFacade:
+    """The synchronous side of a Link (`link.sync.chat` / `link.sync.resolve`), scripted."""
+
+    def __init__(self, owner: "ScriptedLink"):
+        self.owner = owner
+
+    def resolve(self, capability: str) -> Resolution:
+        return self.owner.resolution
+
+    def chat(self, messages, **kwargs) -> ChatResult:
+        owner = self.owner
+        owner.calls.append({"messages": messages, **kwargs})
+        if not owner.resolution.resolved:
+            raise Unavailable("llm", ["no model in this test"])
+        reply = owner.replies.pop(0) if owner.replies else owner.default
+        if callable(reply):
+            reply = reply(messages)
+        if isinstance(reply, BaseException):
+            raise reply
+        if not isinstance(reply, str):
+            import json
+
+            reply = json.dumps(reply, ensure_ascii=False)
+        return chat_text(reply, model=owner.resolution.model or "scripted-model")
+
+
+class ScriptedLink(FakeLink):
+    """A Link whose `sync.chat` answers from a script: strings, dicts (sent as JSON), callables or exceptions."""
+
+    def __init__(self, replies=None, default="{}", resolution: Optional[Resolution] = None):
+        super().__init__(LinkConfig(), resolution=resolution or resolved_llm("test-model"))
+        self.replies = list(replies or [])
+        self.default = default
+        self.calls: list[dict] = []
+        self.sync = _SyncFacade(self)

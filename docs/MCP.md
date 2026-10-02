@@ -10,7 +10,9 @@ behaviour below is defined in `funes_hoard/queries.py` and `funes_hoard/api.py`.
 ## Contract
 
 - **Read-only except `activity_pause`.** The agent surface is exactly the
-  twelve routes below (a test enumerates the app's routes). The pause can
+  twelve routes below (a test enumerates the app's routes), plus two audio
+  routes that other apps reach through the Hoard Link hub: `scribe_minutes`
+  and `scribe_import_file` (documented at the end of this file). The pause can
   only *extend* a pause: it cannot resume recording, shorten a pause the
   human set, or turn "pause until resumed" into a timed pause. Rules,
   deletion, retention and export exist only in the UI.
@@ -266,6 +268,45 @@ source unavailable and the user asks why.
   {"id": "scribe", "name": "Funes audio", "base_url": "http://127.0.0.1:8813/audio", "enabled": true,
    "ok": true, "reason": null, "detail": {"service": "scribe-hoard", "status": "ok"}}]}
 ```
+
+### scribe_minutes(session_id, regenerate=False)
+
+Minutes (*acta*) of a recorded meeting or interview. Served by the audio
+sub-app and reachable from other apps through the hub proxy, as well as over
+MCP. Writes the minutes with the language model when none are stored yet
+(this can take minutes for a long meeting), then returns them; `regenerate`
+rewrites them. Without a model it answers `{"status": "no_model"}` and
+invents nothing.
+
+```json
+{"status": "ready", "cached": false,
+ "minutes": {"session_id": "...", "title": "Reunión de la reforma", "started_at": "2026-10-02T10:00:00",
+             "summary": "...", "decisions": [], "open_questions": [], "participants": ["Marta", "Pedro"],
+             "action_items": [{"owner": "yo", "action": "Enviar el presupuesto revisado",
+                               "counterpart": "Marta", "due_text": "el martes", "due_date": "2026-10-06",
+                               "evidence": {"start_s": 6.0, "end_s": 14.0, "t": "00:06", "speaker": "yo",
+                                            "quote": "yo me encargo de enviar el presupuesto revisado a Marta el martes"}}],
+             "model": "...", "created_at": "..."}}
+```
+
+`owner` is `"yo"` (the person who recorded) or a name that appears in the
+transcript. `evidence.quote` is always a literal piece of the transcript;
+`start_s`, `end_s` and `speaker` come from the transcript segments, not from
+the model. `due_date` is only set when plain rules can work out one day from
+the meeting's date; otherwise only `due_text` is set. Announces
+`funes.minutes.ready {session_id, title, action_items, started_at}` on the
+Hoard Link bus when the minutes are written. Other statuses (all with a
+`detail`): `no_model`, `not_ready` (the session is still being transcribed),
+`no_speech` (nothing was transcribed). An unknown session is a 404.
+
+### scribe_import_file(path, title="", kind="other", language="auto", wait_s=0)
+
+Imports a local audio or video file by absolute path. The original is never
+moved or deleted. With `wait_s` > 0 it waits up to that many seconds (max
+3600) and returns `{session, status, transcript_text, segments, next_from_s}`;
+the text is capped, and `next_from_s` (with a hint to call `scribe_transcript`
+with `from_s`) says where to continue. Rejected with a reason: relative path,
+missing file, a folder, an unsupported type, an empty file.
 
 ## Errors
 

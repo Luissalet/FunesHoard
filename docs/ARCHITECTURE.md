@@ -24,7 +24,9 @@ funes_hoard/
   db.py             sqlite3 (WAL), one shared connection, schema + seeding
   queries.py        read functions shared by the UI API and the agent API
   sources.py        registry of federated sources (Argus/Echo/Funes audio) + health/call
-  audio_memory/     recorder, transcriber, sessions, audio REST API and mobile UI
+  audio_memory/     recorder, transcriber, sessions, audio REST API and mobile UI;
+                    minutes.py (meeting minutes: map/reduce over the transcript, literal-quote
+                    evidence, `funes.minutes.ready`) and due_dates.py (deadline words -> a day)
   recall.py         merges Funes's own episodes with federated sources into one timeline
   timeparse.py      date-word / relative-offset parsing (hoy/ayer/-2h/...), ISO output
   errors.py         BadInput: {error, message} 400s raised from the query layer

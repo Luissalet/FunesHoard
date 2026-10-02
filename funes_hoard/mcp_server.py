@@ -70,7 +70,11 @@ mcp = FastMCP(
         "explicitly asks in the current message, and then tell them how to stop it. "
         "Read a transcript before summarising it; automatic speech recognition can err, "
         "so attribute claims to the transcript and include session title and timestamp. "
-        "scribe_delete permanently removes a session and needs an explicit request."
+        "scribe_delete permanently removes a session and needs an explicit request. "
+        "scribe_minutes returns the minutes (acta) of a transcribed session, written by a local model and "
+        "checked against the transcript: cite the quoted evidence and its time, and if status is no_model say "
+        "that no local model is available instead of writing minutes yourself. scribe_import_file turns a local "
+        "audio or video file into a session without moving the original."
     ),
 )
 
@@ -98,13 +102,13 @@ def _post(path: str, payload: dict) -> dict:
     return resp.json()
 
 
-def _audio_call(name: str, arguments: dict) -> dict:
+def _audio_call(name: str, arguments: dict, timeout: float = 90.0) -> dict:
     """Send an audio-memory tool through the embedded app's existing API."""
     data_dir = Path(os.environ.get("FUNES_DATA_DIR") or Path(__file__).resolve().parent.parent / "data")
     token_file = Path(os.environ.get("FUNES_AUDIO_TOKEN_FILE") or data_dir / "audio" / "mcp-token")
     try:
         token = token_file.read_text(encoding="utf-8").strip()
-        with httpx.Client(timeout=90.0, trust_env=False) as client:
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
             resp = client.post(
                 f"{_app_url()}/audio/api/agent/call",
                 json={"name": name, "arguments": {k: v for k, v in arguments.items() if v is not None}},
@@ -415,6 +419,36 @@ def scribe_tag(session_id: str, add: Optional[list[str]] = None,
 def scribe_export(session_id: str, format: str = "md") -> dict:
     """Render transcript and notes as Markdown, plain text or SRT subtitles."""
     return _audio_call("scribe_export", {"session_id": session_id, "format": format})
+
+
+@mcp.tool(annotations=_IDEMPOTENT_WRITE)
+def scribe_minutes(session_id: str, regenerate: bool = False) -> dict:
+    """Meeting minutes of a session: summary, decisions, action items with evidence. Acta de reunión.
+
+    Writes (or returns the stored) minutes of a transcribed session with the local model: summary,
+    decisions, action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s,
+    speaker, literal quote}}, open questions and participants. Every action item's quote is verified against
+    the transcript and items without one are dropped. status: ready | no_model (no local language model;
+    nothing was invented) | not_ready (still transcribing) | no_speech | error. regenerate=true replaces
+    stored minutes. Long meetings can take minutes.
+    Sinónimos: acta, minutas, resumen de la reunión, acuerdos, tareas pendientes, qué se acordó, quién se comprometió, compromisos, action items, decisiones.
+    """
+    return _audio_call("scribe_minutes", {"session_id": session_id, "regenerate": regenerate}, timeout=1800.0)
+
+
+@mcp.tool(annotations=_WRITE)
+def scribe_import_file(path: str, title: str = "", kind: str = "other", language: str = "auto",
+                       wait_s: float = 0) -> dict:
+    """Import a local audio/video file as a session and optionally wait for its transcript. Importar audio.
+
+    Creates a session from a file already on this computer, by absolute path (the original is copied, never
+    moved or deleted), and transcribes it in the background. With wait_s > 0 it waits up to that many seconds
+    and returns {session, status, transcript_text} (cut at 60000 characters with next_from_s to continue).
+    Use it to get the text of a recorded class, call or video.
+    Sinónimos: importar audio, importar vídeo, transcribir un archivo, transcribe este vídeo, pasar a texto, grabación existente, mp3, mp4, subir audio.
+    """
+    return _audio_call("scribe_import_file", {"path": path, "title": title, "kind": kind, "language": language, "wait_s": wait_s},
+                       timeout=90.0 + max(0.0, float(wait_s)))
 
 
 @mcp.tool(annotations=_DELETE)

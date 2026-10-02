@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
 from .export import FORMATS, hms, render
+from .importer import ALLOWED_EXT, MAX_UPLOAD_BYTES
 from .services import Services
 from .timeparse import TIME_HELP, iso_local, parse_bound
 
@@ -17,7 +20,9 @@ Always give timestamps (mm:ss) and the session title when citing what someone sa
 Never summarise a session you have not read with scribe_transcript; scribe_sessions only gives titles and first lines. Page through long transcripts with from_s/to_s until you have read what the user asked about.
 Speaker labels "yo" and "otros" come from the audio channel (microphone vs. system loopback), not from voice recognition: "otros" may be several people. "S1" means a single-track recording with no speaker information.
 Never start a recording unless the user explicitly asks for it in the current message. When you start one, say clearly that recording has started and how to stop it (scribe_stop or the app). scribe_delete is permanent: confirm first.
-Prefer scribe_search to find a topic across sessions, then scribe_transcript around the hit for context."""
+Prefer scribe_search to find a topic across sessions, then scribe_transcript around the hit for context.
+scribe_minutes gives the minutes (acta) of a transcribed session: summary, decisions, action items and open questions. They were written by a local model and checked against the transcript; every action item carries a literal quote with its time, so cite that quote and time, and say "según el acta" rather than presenting the summary as certain. status "no_model" means no local language model is available: say so, never write minutes yourself as if they were stored ones.
+scribe_import_file turns an audio or video file already on this computer into a session (the original is never moved or deleted); with wait_s it waits for the transcript."""
 
 KindArg = Literal["meeting", "interview", "note", "other"]
 LangArg = Literal["auto", "es", "en"]
@@ -79,6 +84,19 @@ class TagArgs(BaseModel):
 class ExportArgs(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     format: Literal["txt", "srt", "md"] = "md"
+
+
+class MinutesArgs(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=64)
+    regenerate: bool = Field(False, description="Write the minutes again with the model even if some are stored (the old ones are replaced).")
+
+
+class ImportFileArgs(BaseModel):
+    path: str = Field(..., min_length=1, max_length=1024, description="Absolute path of an audio/video file on this computer (wav, mp3, m4a, mp4, mkv, webm...).")
+    title: str = Field("", max_length=200)
+    kind: KindArg = "other"
+    language: LangArg = "auto"
+    wait_s: float = Field(0, ge=0, le=3600, description="Seconds to wait for the transcription to finish. 0 returns the session at once; poll scribe_sessions or scribe_transcript later.")
 
 
 @dataclass(frozen=True)
@@ -192,7 +210,81 @@ def run_tag(svc: Services, a: TagArgs):
 
 def run_export(svc: Services, a: ExportArgs):
     session = _require(svc, a.session_id)
-    return {"format": a.format, "text": render(a.format, session, svc.sessions.segments(a.session_id))}
+    return {"format": a.format, "text": render(a.format, session, svc.sessions.segments(a.session_id), svc.minutes.get(a.session_id) if a.format == "md" else None)}
+
+
+def _agent_minutes(minutes: dict) -> dict:
+    """The minutes as the assistant should read them: local ISO time, hh:mm:ss marks next to the seconds."""
+    out = dict(minutes)
+    out["started_at"] = iso_local(minutes.get("started_at"))
+    out["created_at"] = iso_local(minutes.get("created_at"))
+    out["action_items"] = [{**item, "evidence": {**item["evidence"], "t": hms(item["evidence"]["start_s"])}} for item in minutes.get("action_items", [])]
+    return out
+
+
+def run_minutes(svc: Services, a: MinutesArgs):
+    _require(svc, a.session_id)
+    result = svc.minutes.generate(a.session_id, regenerate=a.regenerate)
+    if result.get("minutes"):
+        result["minutes"] = _agent_minutes(result["minutes"])
+    return result
+
+
+TRANSCRIPT_TEXT_MAX_CHARS = 60000
+
+
+def run_import_file(svc: Services, a: ImportFileArgs):
+    source = Path(a.path).expanduser()
+    if not source.is_absolute():
+        raise ValueError("path must be absolute (for example C:\\Users\\me\\Videos\\clase.mp4).")
+    if not source.exists():
+        raise ValueError(f"No such file: {source}")
+    if not source.is_file():
+        raise ValueError(f"Not a file: {source}")
+    if source.suffix.lower() not in ALLOWED_EXT:
+        raise ValueError(f"Unsupported file type {source.suffix.lower() or '(none)'}; allowed: {', '.join(sorted(ALLOWED_EXT))}.")
+    size = source.stat().st_size
+    if size == 0:
+        raise ValueError("The file is empty.")
+    if size > MAX_UPLOAD_BYTES:
+        raise ValueError(f"The file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB, the import limit.")
+    session = svc.importer.import_file(source, source.name, a.title, a.kind, a.language, keep_source=True)
+    sid = session["id"]
+    deadline = time.monotonic() + a.wait_s
+    while a.wait_s > 0 and time.monotonic() < deadline:
+        current = svc.sessions.get(sid)
+        if current is None or current["status"] in ("done", "failed"):
+            break
+        time.sleep(0.25)
+    session = svc.sessions.get(sid)
+    status = session["status"]
+    out: dict[str, Any] = {"session": _session_brief(svc, session), "status": status}
+    if status == "failed":
+        out["error"] = session["error"]
+    if a.wait_s <= 0:
+        out["message"] = f"Imported; the transcription runs in the background. Read it with scribe_transcript session_id={sid} when status is done."
+        return out
+    if status == "processing":
+        out["message"] = f"Still transcribing after {a.wait_s:g} s. Read it later with scribe_transcript session_id={sid}."
+        return out
+    if status == "done":
+        text, used, next_from = [], 0, None
+        for seg in svc.sessions.segments(sid):
+            speaker = "" if seg["speaker"] == "S1" else f"{seg['speaker']}: "
+            line = f"[{hms(seg['start_s'])}] {speaker}{seg['text']}"
+            if used + len(line) + 1 > TRANSCRIPT_TEXT_MAX_CHARS and text:
+                next_from = seg["start_s"]
+                break
+            text.append(line)
+            used += len(line) + 1
+        out["transcript_text"] = "\n".join(text)
+        out["segments"] = len(svc.sessions.segments(sid))
+        out["next_from_s"] = next_from
+        if next_from is not None:
+            out["message"] = f"The transcript was cut at {hms(next_from)}; continue with scribe_transcript session_id={sid} from_s={next_from}."
+        elif not text:
+            out["message"] = "No speech was detected in the file."
+    return out
 
 
 def run_delete(svc: Services, a: SessionIdArgs):
@@ -205,13 +297,15 @@ def run_delete(svc: Services, a: SessionIdArgs):
 TOOLS: list[Tool] = [
     Tool("scribe_status", "Is a recording in progress? Backend, devices, model and queue. Keywords: estado, grabando, micrófono.\nWhether a recording is in progress (title, elapsed time, tracks), which audio backend and devices exist, the transcription model and its download state, and queue depth.\nSinónimos: estado, grabando, está grabando, micrófono, modelo, transcripción, dispositivos.", Empty, _ann(True), run_status),
     Tool("scribe_sessions", "List recorded sessions newest first, with filters. Keywords: reuniones, grabaciones, sesiones, notas de voz.\nList recorded sessions (meetings, interviews, voice notes, imports) newest first with title, when, duration, kind, tags and the first transcribed line. Filter by words, kind, tag and dates.\nSinónimos: reunión, entrevista, llamada, nota de voz, sesiones, grabaciones, qué reuniones, ayer, esta semana, lista.", SessionsArgs, _ann(True), run_sessions),
-    Tool("scribe_transcript", "Transcript of one session with speakers and timestamps, paginated. Keywords: transcripción, qué se dijo.\nTranscript of one session with speaker labels (yo/otros from the audio channel) and timestamps, paginated by time (from_s/to_s, next_from_s). Read it before summarising or quoting a session.\nSinónimos: transcripción, qué dijeron, qué se dijo, resumen de la reunión, minutos, acta, leer la reunión, hablaron de, entrevista, llamada.", TranscriptArgs, _ann(True), run_transcript),
+    Tool("scribe_transcript", "Transcript of one session with speakers and timestamps, paginated. Keywords: transcripción, qué se dijo.\nTranscript of one session with speaker labels (yo/otros from the audio channel) and timestamps, paginated by time (from_s/to_s, next_from_s). Read it before summarising or quoting a session.\nSinónimos: transcripción, qué dijeron, qué se dijo, leer la reunión, hablaron de, entrevista, llamada. (Para el acta o los acuerdos usa scribe_minutes.)", TranscriptArgs, _ann(True), run_transcript),
     Tool("scribe_search", "Search every transcript by words, grouped by session. Keywords: cuándo hablamos de, buscar en reuniones.\nFull-text search across every transcript: hits grouped by session with time offset, speaker and a snippet. Best first step for 'when did we talk about X'.\nSinónimos: buscar, hablaron de, cuándo dijimos, salario, presupuesto, mencionaron, en qué reunión, reunión, entrevista, transcripción.", SearchArgs, _ann(True), run_search),
     Tool("scribe_start", "Start recording a new session (only when the user asks now). Keywords: graba, empieza a grabar, reunión.\nStart recording a new session (microphone = 'yo', system audio = 'otros'). Only when the user explicitly asks in the current message; not destructive. Tell the user recording has started and that scribe_stop stops it.\nSinónimos: grabar, empieza a grabar, graba la reunión, graba la entrevista, nota de voz, grabación, llamada.", StartArgs, _ann(False, False, False), run_start),
     Tool("scribe_stop", "Stop the recording in progress; the final transcription runs in the background and replaces the live one.\nSinónimos: parar, detener, deja de grabar, termina la grabación, fin de la reunión.", SessionIdArgs, _ann(False, False, True), run_stop),
-    Tool("scribe_note", "Append text to a session's notes (decisions, action items, a summary the user approved).\nAn identical trailing note is returned with existing=true instead of appended again.\nSinónimos: nota, apunta, añade a las notas, acuerdos, tareas, resumen de la reunión, minutos.", NoteArgs, _ann(False, False, True), run_note),
+    Tool("scribe_note", "Append text to a session's notes (decisions, action items, a summary the user approved).\nAn identical trailing note is returned with existing=true instead of appended again.\nSinónimos: nota, apunta, añade a las notas, apuntes de la sesión.", NoteArgs, _ann(False, False, True), run_note),
     Tool("scribe_tag", "Add or remove tags on a session (idempotent: existing tags are kept once).\nSinónimos: etiqueta, etiquetar, categoría, marcar, cliente, proyecto.", TagArgs, _ann(False, False, True), run_tag),
-    Tool("scribe_export", "Render a session as plain text, SRT subtitles or Markdown (with notes) and return the text.\nSinónimos: exportar, acta, minutos, subtítulos, markdown, texto, descargar la transcripción.", ExportArgs, _ann(True), run_export),
+    Tool("scribe_export", "Render a session as text, SRT or Markdown (md includes notes and minutes). Exportar.\nReturns the transcript as plain text, SRT subtitles or Markdown; the Markdown also carries the notes and, when they exist, the minutes.\nSinónimos: exportar, subtítulos, markdown, texto, descargar la transcripción, exportar el acta.", ExportArgs, _ann(True), run_export),
+    Tool("scribe_minutes", "Meeting minutes of a session: summary, decisions, action items with evidence. Acta de reunión.\nWrites (or returns the stored) minutes of a transcribed session with the local model: summary, decisions, action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s, speaker, literal quote}}, open questions and participants. Every action item's quote is verified against the transcript and items without one are dropped. status: ready | no_model (no local language model; nothing was invented) | not_ready (still transcribing) | no_speech | error. regenerate=true replaces stored minutes. Long meetings can take minutes.\nSinónimos: acta, minutas, resumen de la reunión, acuerdos, tareas pendientes, qué se acordó, quién se comprometió, compromisos, action items, decisiones.", MinutesArgs, _ann(False, False, True), run_minutes),
+    Tool("scribe_import_file", "Import a local audio/video file as a session and optionally wait for its transcript. Importar audio.\nCreates a session from a file already on this computer, by absolute path (the original is copied, never moved or deleted), and transcribes it in the background. With wait_s > 0 it waits up to that many seconds and returns {session, status, transcript_text} (cut at 60000 characters with next_from_s to continue). Use it to get the text of a recorded class, call or video.\nSinónimos: importar audio, importar vídeo, transcribir un archivo, transcribe este vídeo, pasar a texto, grabación existente, mp3, mp4, subir audio.", ImportFileArgs, _ann(False, False, False), run_import_file),
     Tool("scribe_delete", "Permanently delete a session (only when asked; no undo). Keywords: borrar grabación, eliminar sesión.\nPermanently delete a session: audio, transcript and notes. Only when the user explicitly asks; there is no undo.\nSinónimos: borrar, eliminar, borra la grabación, elimina la reunión, olvidar.", SessionIdArgs, _ann(False, True, True), run_delete),
 ]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

@@ -33,6 +33,13 @@ export const api = {
   patchSession: (id, patch) => request("PATCH", `/api/sessions/${id}`, { body: patch }),
   deleteSession: (id) => request("DELETE", `/api/sessions/${id}`),
   retranscribe: (id) => request("POST", `/api/sessions/${id}/retranscribe`),
+  minutes: (id) => request("GET", `/api/sessions/${id}/minutes`),
+  makeMinutes: (id, body) => request("POST", `/api/sessions/${id}/minutes`, { body }),
+  minutesMarkdown: async (id) => {
+    const response = await fetch(`/audio/api/sessions/${id}/minutes?format=md`);
+    if (!response.ok) throw new Error(`Error ${response.status}`);
+    return response.text();
+  },
   peaks: (id, n = 400) => request("GET", `/api/sessions/${id}/peaks`, { params: { n } }),
   search: (params) => request("GET", "/api/search", { params }),
   tags: () => request("GET", "/api/tags"),

@@ -13,12 +13,14 @@ from .config import Config
 from .db import Database
 from .events import EventBus
 from .importer import Importer, ffmpeg_path, pyav_available
+from .minutes import MinutesService
 from .pipeline import Pipeline
 from .recorder import Recorder
 from .settings import SettingsPatch, SettingsStore
 from .store import SessionStore
 from .transcribe import select_transcriber, whisper_available
 from .vad import HAVE_WEBRTCVAD
+from funes_hoard.hoard_link import family
 from .worker import TranscriptionWorker
 
 log = logging.getLogger("scribe")
@@ -36,7 +38,8 @@ def write_token(config: Config) -> str:
 
 
 class Services:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, link_provider=None, emit=None):
+        """`link_provider` returns the host app's Hoard Link (None: no minutes, `no_model`); `emit` posts family events."""
         self.config = config
         self.started_at = time.time()
         config.data_dir.mkdir(parents=True, exist_ok=True)
@@ -58,6 +61,13 @@ class Services:
         self.importer = Importer(self.sessions, self.pipeline)
         self.recorder = Recorder(self.backend, self.settings, self.sessions, self.transcriber, self.worker, self.bus)
         self.recorder.on_stopped = self.pipeline.enqueue_final
+        self.minutes = MinutesService(self.db, self.sessions, self.settings, link_provider, emit=emit if emit is not None else family.emit)
+        self.pipeline.on_done = self._transcribed
+
+    def _transcribed(self, session_id: str) -> None:
+        """A final pass finished: the old minutes (if any) describe replaced text, so write new ones when wanted."""
+        self.minutes.discard(session_id)
+        self.minutes.after_transcription(session_id)
 
     # ---------- lifecycle ----------
     def start(self) -> None:
@@ -77,6 +87,7 @@ class Services:
             except Exception:  # pragma: no cover
                 pass
         self.worker.stop()
+        self.minutes.close()
         self.db.close()
 
     # ---------- settings ----------

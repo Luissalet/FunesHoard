@@ -38,12 +38,17 @@ def render_srt(session: dict, segments: list[dict]) -> str:
     return "\n".join(blocks) + ("" if blocks else "\n")
 
 
-def render_md(session: dict, segments: list[dict]) -> str:
+def render_md(session: dict, segments: list[dict], minutes: dict | None = None) -> str:
     title = session.get("title") or "Sesión sin título"
     meta = [f"- Fecha: {_stamp(session.get('started_at'))}", f"- Tipo: {session.get('kind', 'other')}", f"- Duración: {hms(session.get('duration_s', 0))}"]
     if session.get("tags"):
         meta.append("- Etiquetas: " + ", ".join(session["tags"]))
-    lines = [f"# {title}", "", *meta, "", "## Transcripción", ""]
+    lines = [f"# {title}", "", *meta, ""]
+    if minutes:
+        from .minutes import render_minutes_md
+
+        lines += [render_minutes_md(session, minutes, heading=2).rstrip(), ""]
+    lines += ["## Transcripción", ""]
     current = None
     for seg in segments:
         if seg["speaker"] != current:
@@ -55,11 +60,11 @@ def render_md(session: dict, segments: list[dict]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render(fmt: str, session: dict, segments: list[dict]) -> str:
+def render(fmt: str, session: dict, segments: list[dict], minutes: dict | None = None) -> str:
     if fmt == "txt":
         return render_txt(session, segments)
     if fmt == "srt":
         return render_srt(session, segments)
     if fmt == "md":
-        return render_md(session, segments)
+        return render_md(session, segments, minutes)
     raise ValueError(f"Unknown export format: {fmt}")

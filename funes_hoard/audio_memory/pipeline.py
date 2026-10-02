@@ -40,6 +40,7 @@ class Pipeline:
     def __init__(self, store: SessionStore, transcriber: Transcriber, worker: TranscriptionWorker, bus: EventBus, settings: SettingsStore | None = None):
         self.store, self.transcriber, self.worker, self.bus = store, transcriber, worker, bus
         self.settings = settings
+        self.on_done = None  # called with the session id after a successful final pass (the minutes hook)
 
     def _sensitivity(self) -> int:
         return self.settings.get().vad_sensitivity if self.settings else 2
@@ -73,6 +74,11 @@ class Pipeline:
             updated = self.store.update(session_id, status="done", duration_s=round(duration, 2), audio_path=str(audio_path), error="", ended_at=session["ended_at"] or time.time(), stats=all_stats)
             log.info("final pass %s: %d segments in %.1fs (silent chunks %d, dropped %d)", session_id, len(stored), time.time() - started, stats.skipped_silent, stats.dropped)
             self.bus.publish(session_id, "done", {"status": "done", "segments": len(stored), "duration_s": round(duration, 2), "no_speech": not stored})
+            if self.on_done is not None:
+                try:
+                    self.on_done(session_id)
+                except Exception:  # noqa: BLE001 - a hook must never turn a finished transcription into a failure
+                    log.exception("post-transcription hook failed for %s", session_id)
             return updated
         except Exception as error:
             log.exception("final pass failed for %s", session_id)

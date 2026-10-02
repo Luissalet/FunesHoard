@@ -55,8 +55,10 @@ and gives the assistant focused tools to ask for them.
 | Derived knowledge | Day, week and range totals by category/app/project, clipped at the window edges; first/last activity; context switches (>= 10 s dwell); focus blocks (>= 25 min, each interruption <= 2 min); "where was I" with distinct contexts (work first; music, chat and games left out unless asked), their recent titles, files (the project's own first) and commits | Focus is measured from window time only; it says nothing about attention |
 | Other sources | Recent files from a Shell Link (`.lnk`) parser written from the spec (Unicode paths, path suffixes, truncated files rejected); git commits from configured roots, filtered by configured authors or, by default, each repo's own git identity | Files opened without passing through Windows Recent Items are not seen |
 | Search | SQLite FTS5 over titles, file paths and commit subjects, accent-insensitive, prefix words, safe for any input; falls back to "any word" when all words find nothing; a window hit says how long it was open and, in the interface, opens its day at that moment | If the platform's sqlite3 lacks FTS5 the app uses `LIKE` search (checked at startup) |
-| Agent API | Twelve tools, read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); project-specific resume reaches back up to 180 days; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
+| Agent API | Twelve activity tools (two audio tools more for other apps, see below), read-only except a pause that can only extend; local ISO times and human strings in every result; small limits with `has_more`/`next_offset`; ids and times chain from one call into the next (`activity_timeline(around=<a hit's ts>)`); project-specific resume reaches back up to 180 days; every call audited, including rejected ones | The agent cannot resume, change rules, delete or export, by design |
 | Audio memory | Record microphone and system audio, transcribe locally, import audio, search sessions, edit notes/tags and export TXT/SRT/Markdown. Open **Audio y transcripción** in Funes or install its `/audio/` PWA. Audio lives in `data/audio`, with its own retention and local model cache | Recording requires an audio device; imported files work without one |
+| Meeting minutes | An *acta* for a meeting or interview session: summary, decisions, open questions, participants and **action items** (who, what, for whom, by when), each with the evidence it came from (time, speaker, a quote that is literally in the transcript; time and speaker are taken from the transcript, never from the model). Long meetings are read in slices and merged. Deadlines such as "el martes" or "in two weeks" are worked out from the meeting's own date by plain rules, not by the model; when they name no single day they stay as words. Written by itself when a meeting or interview finishes transcribing (setting *Escribir actas automáticamente*, on by default), or on demand: **Generar / Regenerar** in the session view, timestamps that seek the audio, **Copiar como Markdown**, and the minutes are included in the Markdown export. Announces `funes.minutes.ready` on the Hoard Link bus | Needs a language model through Hoard Link; with none the answer is `no_model` and nothing is invented. Minutes are replaced when a session is transcribed again |
+| Import by path | `scribe_import_file(path, wait_s)` imports a local audio or video file by its path without moving or deleting the original, and with `wait_s` returns the transcript (capped, with a hint to continue) | The path must be absolute and on this computer; the app never reads outside a file you name |
 | Recall | `recall`/`recall_search` merge desktop episodes, Funes audio, Argus screen memory and Echo clipboard history into one citable timeline (`[scribe:seg 17 16:04]` keeps the existing audio citation id) ([docs/RECALL.md](docs/RECALL.md)) | Argus and Echo need their sibling apps; audio runs inside Funes |
 | Shared models | "Write my day": a cached, regenerable short narrative of a day ("You spent the morning on..."), from the same compact data `activity_summary` returns (never raw or redacted titles); Settings shows the resolved model, provider and a plain-English reason when none is available, with a Re-check button and manual overrides | UI-only, not an MCP tool; needs a language model reachable through Hoard Link (Faustus, or a shared Ollama, llama.cpp or other OpenAI-compatible server); a day with nothing recorded is refused without calling the model |
 | Interface | Today (zoomable timeline with away and locked time drawn, legend, pinned details, keyboard-focusable segments, Where was I?, Write my day), Week (navigable), Search (date filter), Projects (range picker), Files & commits, Rules, Privacy, Settings (Models), Assistant activity; every day and moment has its own address (reload and Back work); English/Spanish; light/dark | Desktop layout; not designed for phones |
@@ -184,6 +186,10 @@ $env:FUNES_URL = "http://127.0.0.1:8813"
 | `recall` | "What was I doing at time X" merged across Funes activity/audio, Argus and Echo, with a short citation per item | yes |
 | `recall_search` | The same merge, but a text search across a range instead of a moment | yes |
 | `sources_status` | Health of every federated source (running, reachable, token accepted) | yes |
+| `scribe_minutes` | Minutes of a recorded session (summary, decisions, action items with evidence); written with the local model if needed, `no_model` when there is none; `regenerate` rewrites them | no (stores the minutes) |
+| `scribe_import_file` | Import a local audio/video file by path; with `wait_s` returns the transcript so a caller can use it at once | no |
+
+The audio session tools (`scribe_status`, `scribe_sessions`, `scribe_transcript`, `scribe_search`, `scribe_start`, `scribe_stop`, `scribe_note`, `scribe_tag`, `scribe_export`, `scribe_delete`) are served by the same MCP adapter. Other apps reach Funes through the Hoard Link hub, which sees exactly the twelve activity tools plus `scribe_minutes` and `scribe_import_file`: starting, stopping and deleting recordings stay out of reach of other apps.
 
 It works with any MCP client over stdio; [docs/MCP.md](docs/MCP.md) has the
 output of every tool, the error codes and a config snippet, and
@@ -192,8 +198,8 @@ citation format in full.
 
 ## Shared models (HoardLink)
 
-The only feature that needs a language model, "Write my day", never loads
-one of its own: it uses [HoardLink](https://github.com/Luissalet/HoardLink)
+The features that need a language model, "Write my day" and the meeting minutes, never load
+one of their own: it uses [HoardLink](https://github.com/Luissalet/HoardLink)
 (vendored in [`funes_hoard/hoard_link/`](funes_hoard/hoard_link/)), the
 resolver every Faustus plugin app shares, in this order -- explicit
 override in Settings, then Faustus's own model registry, then a shared
@@ -307,6 +313,7 @@ the images in `docs/media/`.
 - **No browser address-bar reader:** a title rule decides streaming vs.
   browsing, so a video on a site the rule does not know stays Browsing with
   the ordinary idle threshold.
+- **Minutes are only as good as the transcript and the model.** Quotes are checked against the transcript and an action item without a verifiable quote is dropped, so a smaller model gives shorter minutes, not invented ones. Owners are "yo" (the person who recorded) or a name that appears in the transcript; a speaker label the app cannot tell apart is not turned into a name.
 - "Where was I?" looks three days back; after a longer absence it says
   there is nothing to pick up.
 - The Models panel shows the backend's diagnostic reason in English in both

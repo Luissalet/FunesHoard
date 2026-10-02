@@ -5,6 +5,7 @@ and the `/api/agent/*` surface that the MCP adapter is a thin wrapper over.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import logging.handlers
@@ -339,7 +340,7 @@ def create_app(
         audio_config.port = port or 8813
         audio_config.allowed_hosts = tuple(dict.fromkeys((*audio_config.allowed_hosts, *allowed_hosts)))
         audio_config.data_dir_configured = True
-        audio_app = create_audio_app(audio_config)
+        audio_app = create_audio_app(audio_config, link_provider=lambda: app.state.link)
     except ImportError as exc:
         audio_error = str(exc)
         logging.getLogger("funes_hoard").warning("Audio module unavailable: %s", exc)
@@ -588,6 +589,45 @@ def create_app(
     @app.post("/api/agent/sources_status")
     async def agent_sources_status():
         return await run_agent_async("sources_status", "(no arguments)", run_sources_status(sources_registry))
+
+    # ------------------------------------------- audio tools for the family --
+    # Other Hoards reach Funes through the hub's proxy (POST /api/agent/call), which only
+    # knows this surface. Two audio tools are published on it: meeting minutes (People's
+    # Hoard turns their action items into commitments) and import-by-path (a recipe or
+    # class video becomes a transcript for the app that asked). The rest of the audio tools
+    # (start, stop, delete...) stay on the stdio bridge, never on the family surface.
+    if audio_app is not None:
+        from funes_hoard.audio_memory import agent_tools as audio_tools
+
+        def _scribe_route(tool_name: str):
+            model = audio_tools.TOOLS_BY_NAME[tool_name].input_model
+
+            async def endpoint(args):
+                services = getattr(audio_app.state, "services", None)
+                if services is None:
+                    raise BadInput("audio_starting", "The audio module is still starting; retry in a few seconds.")
+                started = time.perf_counter()
+                summary = _args(**{k: v for k, v in args.model_dump().items() if k != "path"}, path=Path(args.model_dump().get("path", "")).name or None)
+                try:
+                    result = await asyncio.to_thread(audio_tools.call_tool, services, tool_name, args.model_dump(by_alias=True))
+                except LookupError as exc:
+                    _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, False, str(exc))
+                    raise HTTPException(status_code=404, detail={"error": "not_found", "message": str(exc)})
+                except ValueError as exc:
+                    _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, False, str(exc))
+                    raise BadInput("bad_arguments", str(exc))
+                except RuntimeError as exc:
+                    _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, False, str(exc))
+                    raise HTTPException(status_code=503, detail={"error": "unavailable", "message": str(exc)})
+                _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, True, None)
+                return result
+
+            endpoint.__annotations__ = {"args": model}
+            endpoint.__name__ = f"agent_{tool_name}"
+            return endpoint
+
+        for _tool in ("scribe_minutes", "scribe_import_file"):
+            app.add_api_route(f"/api/agent/{_tool}", _scribe_route(_tool), methods=["POST"])
 
     # --------------------------------------------------------- UI routes --
     @app.get("/api/status")

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from ..audio.wav import peaks as compute_peaks, read_wav
 from ..export import FORMATS, MIME, render
 from ..importer import MAX_UPLOAD_BYTES
+from ..minutes import render_minutes_md
 from ..live import live_events
 from ..settings import Kind, Language
 from ..store import KINDS
@@ -27,6 +28,11 @@ class StartBody(BaseModel):
     kind: Kind = "meeting"
     sources: dict[str, bool] = Field(default_factory=lambda: {"mic": True, "system": True})
     language: Language = "auto"
+
+
+class MinutesBody(BaseModel):
+    regenerate: bool = False
+    wait: bool = False  # True: answer when the minutes are written (can take minutes); False: queue and poll GET
 
 
 class PatchBody(BaseModel):
@@ -68,8 +74,10 @@ def list_sessions(request: Request, q: str = "", kind: str | None = None, tag: s
     start_at, end_at = bounds(from_, to)
     svc = services(request)
     rows = svc.sessions.list(q, kind, tag, start_at, end_at, status, limit, offset)
+    counts = svc.minutes.store.counts([row["id"] for row in rows])
     for row in rows:
         row["first_line"] = svc.sessions.first_line(row["id"])
+        row["minutes_items"] = counts.get(row["id"])  # None: no minutes yet
     return {"sessions": rows}
 
 
@@ -77,7 +85,37 @@ def list_sessions(request: Request, q: str = "", kind: str | None = None, tag: s
 def detail(request: Request, session_id: str):
     svc = services(request)
     session = require_session(svc, session_id)
-    return {**session, "segments": svc.sessions.segments(session_id)}
+    return {**session, "segments": svc.sessions.segments(session_id), "has_minutes": svc.minutes.store.get(session_id) is not None}
+
+
+@router.get("/{session_id}/minutes")
+def get_minutes(request: Request, session_id: str, format: str = Query("json")):
+    """The minutes of a session (`minutes` is null until written) with the generation state; format=md gives Markdown."""
+    svc = services(request)
+    session = require_session(svc, session_id)
+    if format == "md":
+        minutes = svc.minutes.get(session_id)
+        if minutes is None:
+            raise HTTPException(404, "This session has no minutes yet.")
+        return PlainTextResponse(render_minutes_md(session, minutes), media_type=MIME["md"])
+    if format != "json":
+        raise HTTPException(400, "format must be json or md")
+    return svc.minutes.view(session_id)
+
+
+@router.post("/{session_id}/minutes", status_code=202)
+def make_minutes(request: Request, session_id: str, body: MinutesBody | None = None):
+    """Write (or rewrite) the minutes with the local model. Queued by default; poll GET until `generating` is false."""
+    body = body or MinutesBody()
+    svc = services(request)
+    session = require_session(svc, session_id)
+    if session["status"] != "done":
+        raise HTTPException(409, "The session is not transcribed yet.")
+    if body.wait:
+        result = svc.minutes.generate(session_id, regenerate=body.regenerate)
+        return {**svc.minutes.view(session_id), "result": result["status"]}
+    queued = svc.minutes.schedule(session_id, regenerate=body.regenerate)
+    return {**svc.minutes.view(session_id), "queued": queued}
 
 
 @router.patch("/{session_id}")
@@ -153,7 +191,7 @@ def export(request: Request, session_id: str, format: str = Query("txt", alias="
         raise HTTPException(400, f"format must be one of {', '.join(FORMATS)}")
     svc = services(request)
     session = require_session(svc, session_id)
-    text = render(format, session, svc.sessions.segments(session_id))
+    text = render(format, session, svc.sessions.segments(session_id), svc.minutes.get(session_id) if format == "md" else None)
     return PlainTextResponse(text, media_type=MIME[format], headers={"Content-Disposition": f'attachment; filename="{session_id}.{format}"'})
 
 

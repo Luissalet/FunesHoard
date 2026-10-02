@@ -82,6 +82,13 @@ export default function Ajustes() {
       </section>
 
       <section className="panel mb-5">
+        <h2 className="text-[17px] font-semibold">Acta de reuniones</h2>
+        <Row label="Escribir el acta al terminar" help="Cuando una reunión o entrevista acaba de transcribirse, el modelo local escribe el acta (resumen, decisiones y compromisos con su cita) y avisa a las demás apps. Necesita un modelo de lenguaje cargado en Faustus u Ollama; si no hay, se puede generar a mano más tarde.">
+          <Switch checked={settings.auto_minutes} label="Acta automática" onChange={(v) => save({ auto_minutes: v })} />
+        </Row>
+      </section>
+
+      <section className="panel mb-5">
         <h2 className="text-[17px] font-semibold">Valores por defecto al grabar</h2>
         <Row label="Micrófono" help={`Etiqueta «yo». ${status.devices.mic.map((d) => d.name).join(", ") || "sin dispositivos"}`}>
           <Switch checked={settings.default_source_mic} label="Micrófono por defecto" onChange={(v) => save({ default_source_mic: v })} />

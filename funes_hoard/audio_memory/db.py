@@ -52,6 +52,20 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE sessions ADD COLUMN stats TEXT NOT NULL DEFAULT '{}';
     """,
+    # 3: meeting minutes (summary, decisions, action items with evidence, open questions), one per session
+    """
+    CREATE TABLE minutes (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+      summary TEXT NOT NULL DEFAULT '',
+      decisions TEXT NOT NULL DEFAULT '[]',
+      action_items TEXT NOT NULL DEFAULT '[]',
+      open_questions TEXT NOT NULL DEFAULT '[]',
+      participants TEXT NOT NULL DEFAULT '[]',
+      model TEXT NOT NULL DEFAULT '',
+      created_at REAL NOT NULL,
+      stats TEXT NOT NULL DEFAULT '{}'
+    );
+    """,
 ]
 
 

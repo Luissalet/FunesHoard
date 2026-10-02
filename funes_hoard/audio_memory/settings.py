@@ -27,6 +27,7 @@ class Settings(BaseModel):
     vad_sensitivity: int = Field(2, ge=0, le=3)  # 0 = permissive, 3 = aggressive (webrtcvad scale)
     live_transcription: bool = True
     live_chunk_max_s: int = Field(15, ge=5, le=60)
+    auto_minutes: bool = True  # write the minutes of a finished meeting/interview in the background
 
 
 class SettingsPatch(BaseModel):
@@ -42,6 +43,7 @@ class SettingsPatch(BaseModel):
     vad_sensitivity: int | None = Field(None, ge=0, le=3)
     live_transcription: bool | None = None
     live_chunk_max_s: int | None = Field(None, ge=5, le=60)
+    auto_minutes: bool | None = None
 
 
 class SettingsStore:

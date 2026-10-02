@@ -66,6 +66,7 @@ export default function Sesiones() {
                 <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{s.title}</span>
                 <StatusChip status={s.status} />
                 <span className="chip">{KIND_LABEL[s.kind]}</span>
+                {s.minutes_items != null && <span className="chip chip-ok">acta · {s.minutes_items} {s.minutes_items === 1 ? "acción" : "acciones"}</span>}
                 <span className="help num">{fmtDuration(s.duration_s)}</span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 help">
