@@ -108,7 +108,7 @@ def test_recall_search_reads_audio_inside_same_process(tmp_path, monkeypatch):
         store = app.state.audio_app.state.services.sessions
         created = store.create("Reunión de arquitectura", "meeting", True, False, "es", status="done")
         store.add_segments(created["id"], [Labelled(1, 3, "S1", "Migrar el proyecto Atlas")], live=False)
-        result = httpx.post(base + "/api/agent/recall_search", json={"query": "Atlas", "sources": ["scribe"]}, timeout=10)
+        result = httpx.post(base + "/api/agent/recall_search", json={"query": "Atlas", "sources": ["scribe"]}, headers=agent_headers(), timeout=10)
         assert result.status_code == 200, result.text
         body = result.json()
         assert any(item["source"] == "scribe" and "Atlas" in item["text"] for item in body["items"])

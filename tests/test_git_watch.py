@@ -89,7 +89,9 @@ def test_scan_repo_decodes_utf8_and_hides_console_on_windows(tmp_path, monkeypat
         seen.update(kwargs)
         return R()
 
-    monkeypatch.setattr(gw.sys, "platform", "win32")
+    from funes_hoard.hoard_link import proc
+
+    monkeypatch.setattr(proc, "IS_WIN", True)  # the family helper decides about the console window
     events = scan_repo(tmp_path, 0, [], run=fake_run)
     assert events[0].subject == "feat: añadir caché"
     assert seen["encoding"] == "utf-8" and seen["errors"] == "replace"
@@ -245,3 +247,4 @@ def test_an_old_abandoned_repo_ages_out_of_being_a_project(tmp_path):
     db.execute("UPDATE commits SET ts = ?", (time.time() - 200 * 86400,))
     db.set_meta("known_repos", "[]")  # also simulate a poll since then finding nothing new
     assert "notes" not in _known_repo_names(db)
+

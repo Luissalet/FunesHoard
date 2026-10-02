@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
+
 import time
 from pathlib import Path
 from typing import List, NamedTuple, Optional
 
 from funes_hoard.db import Database
+from funes_hoard.hoard_link.proc import no_window_kwargs
 
 _LOG_FORMAT = "%H%x1f%at%x1f%s%x1f%an%x1f%ae%x1e"
 
@@ -59,16 +60,10 @@ def find_git_repos(root: Path, max_depth: int = 2) -> List[Path]:
     return found
 
 
-# subprocess.CREATE_NO_WINDOW: without it every `git` call made from a
-# windowless app (started by Faustus, or with pythonw) flashes a console.
-_CREATE_NO_WINDOW = 0x08000000
-
-
 def _subprocess_kwargs() -> dict:
-    kwargs = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace", "timeout": 15}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = _CREATE_NO_WINDOW
-    return kwargs
+    # no_window_kwargs(): without CREATE_NO_WINDOW every `git` call made from a windowless app (started by Faustus, or with pythonw)
+    # flashes a console.
+    return {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace", "timeout": 15, **no_window_kwargs()}
 
 
 def repo_identity(repo_path: Path, run=subprocess.run) -> List[str]:
