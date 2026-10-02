@@ -63,6 +63,7 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
         command=sys.executable,
         args=[str(REPO_ROOT / "funes_hoard" / "mcp_server.py")],
         env={"FUNES_URL": f"http://127.0.0.1:{port}",
+             "FUNES_TOKEN_FILE": str(demo_data_dir / "mcp-token"),
              "FUNES_AUDIO_TOKEN_FILE": str(demo_data_dir / "audio" / "mcp-token")},
     )
     async with stdio_client(params) as (read, write):
@@ -77,7 +78,7 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
                 "recall", "recall_search", "sources_status",
             } | {"scribe_status", "scribe_sessions", "scribe_transcript", "scribe_search",
                  "scribe_start", "scribe_stop", "scribe_note", "scribe_tag", "scribe_export", "scribe_delete",
-                 "scribe_minutes", "minutes_get", "scribe_import_file"}
+                 "scribe_minutes", "minutes_get", "scribe_import_file", "transcribe_file", "transcribe_status", "transcribe_cancel"}
             pause_tool = next(t for t in tools.tools if t.name == "activity_pause")
             assert pause_tool.annotations.readOnlyHint is False
             now_tool = next(t for t in tools.tools if t.name == "activity_now")
@@ -187,3 +188,39 @@ async def test_mcp_adapter_raises_tool_error_when_app_not_running():
             result = await session.call_tool("activity_now", {})
             assert result.isError is True
             assert "not running" in result.content[0].text
+
+
+@pytest.fixture()
+def fake_stt(monkeypatch):
+    monkeypatch.setenv("SCRIBE_AUDIO", "none")
+    monkeypatch.setenv("SCRIBE_TRANSCRIBER", "fake")
+
+
+@pytest.mark.asyncio
+async def test_mcp_adapter_transcribes_a_file_without_keeping_a_session(fake_stt, live_app, demo_data_dir, tmp_path):
+    import numpy as np
+
+    from funes_hoard.audio_memory.audio.wav import SAMPLE_RATE, write_wav
+
+    clip = tmp_path / "clase.wav"
+    write_wav(clip, np.zeros(SAMPLE_RATE * 4, dtype=np.int16))
+    params = StdioServerParameters(
+        command=sys.executable, args=[str(REPO_ROOT / "funes_hoard" / "mcp_server.py")],
+        env={"FUNES_URL": f"http://127.0.0.1:{live_app}", "FUNES_TOKEN_FILE": str(demo_data_dir / "mcp-token"),
+             "FUNES_AUDIO_TOKEN_FILE": str(demo_data_dir / "audio" / "mcp-token")},
+    )
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            sessions_before = json.loads((await session.call_tool("scribe_status", {})).content[0].text)["sessions_total"]
+            done = await session.call_tool("transcribe_file", {"path": str(clip), "language": "es", "wait_s": 30})
+            assert done.isError is not True, done.content[0].text
+            job = json.loads(done.content[0].text)
+            assert job["status"] == "done" and job["text"].startswith("Hola, empezamos") and job["segments"][0]["words"]
+            again = json.loads((await session.call_tool("transcribe_status", {"job_id": job["job_id"]})).content[0].text)
+            assert again["status"] == "done" and again["text"] == job["text"]
+            cancelled = json.loads((await session.call_tool("transcribe_cancel", {"job_id": job["job_id"]})).content[0].text)
+            assert cancelled["status"] == "done"
+            missing = await session.call_tool("transcribe_status", {"job_id": "nope"})
+            assert missing.isError is True and "no such job" in missing.content[0].text
+            assert json.loads((await session.call_tool("scribe_status", {})).content[0].text)["sessions_total"] == sessions_before

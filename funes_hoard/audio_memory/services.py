@@ -18,7 +18,12 @@ from .pipeline import Pipeline
 from .recorder import Recorder
 from .settings import SettingsPatch, SettingsStore
 from .store import SessionStore
+from funes_hoard.hoard_link.media import stt
+
+from .stt_jobs import SttJobs
 from .transcribe import select_transcriber, whisper_available
+from .transcribe.fake import FakeWhisperModel
+from .transcribe.whisper import WhisperTranscriber
 from .vad import HAVE_WEBRTCVAD
 from funes_hoard.hoard_link import family
 from .worker import TranscriptionWorker
@@ -56,12 +61,34 @@ class Services:
         self.notes += notes
         for note in self.notes:
             log.info("backend: %s", note)
+        self._fake_engine: stt.Transcriber | None = None
+        self.stt = SttJobs(self.worker, self._stt_engine, self._stt_engine_for, self._stt_available)
         self.pipeline = Pipeline(self.sessions, self.transcriber, self.worker, self.bus, self.settings)
         self.importer = Importer(self.sessions, self.pipeline)
         self.recorder = Recorder(self.backend, self.settings, self.sessions, self.transcriber, self.worker, self.bus)
         self.recorder.on_stopped = self.pipeline.enqueue_final
         self.minutes = MinutesService(self.db, self.sessions, self.settings, link_provider, emit=emit if emit is not None else family.emit)
         self.pipeline.on_done = self._transcribed
+
+    # ---------- the family's speech-to-text service ----------
+    def _fake_stt_engine(self) -> stt.Transcriber:
+        if self._fake_engine is None:
+            self._fake_engine = stt.Transcriber(self.config.models_dir, "fake", "cpu", "int8", lease=False, owner="funes",
+                                                model_factory=lambda *a, **k: FakeWhisperModel())
+        return self._fake_engine
+
+    def _stt_engine(self) -> stt.Transcriber:
+        """The sessions' own engine, so there is one model in memory; the fake one when sessions use the fake transcriber."""
+        return self.transcriber.engine if isinstance(self.transcriber, WhisperTranscriber) else self._fake_stt_engine()
+
+    def _stt_engine_for(self, size: str) -> stt.Transcriber:
+        if not isinstance(self.transcriber, WhisperTranscriber):
+            return self._fake_stt_engine()
+        s = self.settings.get()
+        return stt.Transcriber(self.config.models_dir, size, s.device, s.compute_type, owner="funes")
+
+    def _stt_available(self) -> bool:
+        return not isinstance(self.transcriber, WhisperTranscriber) or stt.available()
 
     def _transcribed(self, session_id: str) -> None:
         """A final pass finished: the old minutes (if any) describe replaced text, so write new ones when wanted."""

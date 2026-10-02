@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import pytest
+from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
@@ -54,6 +55,7 @@ def test_unknown_api_path_is_json_404_not_the_spa(static_client):
 def client(demo_data_dir):
     app = create_app(demo_data_dir, None, demo=True, port=PORT)
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
+        c.headers.update(agent_headers())
         yield c
 
 
@@ -84,18 +86,19 @@ def test_guard_rejects_null_origin_on_write(client):
     assert r.status_code == 403
 
 
-def test_agent_surface_is_exactly_the_twelve_tools_plus_three_audio_tools(client):
+def test_agent_surface_is_exactly_the_twelve_tools_plus_six_audio_tools(client):
     agent_paths = sorted(
         {getattr(r, "path", "") for r in client.app.routes if getattr(r, "path", "").startswith("/api/agent/")}
     )
-    # The twelve activity tools, the two audio tools other Hoards need through the hub
-    # (meeting minutes and import-by-path: no start, stop or delete), plus the two routes of
+    # The twelve activity tools, the audio tools other Hoards need through the hub
+    # (meeting minutes, import-by-path and the speech-to-text service: no start, stop or delete), plus the two routes of
     # the shared family contract (the catalogue and the token-guarded dispatcher over them).
     assert agent_paths == sorted(
         [f"/api/agent/{t}" for t in (
             "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline", "activity_summary",
             "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
             "recall", "recall_search", "sources_status", "scribe_minutes", "minutes_get", "scribe_import_file",
+            "transcribe_file", "transcribe_status", "transcribe_cancel",
         )] + ["/api/agent/tools", "/api/agent/call"]
     )
 
@@ -103,9 +106,9 @@ def test_agent_surface_is_exactly_the_twelve_tools_plus_three_audio_tools(client
 def test_shared_contract_dispatches_the_same_tools(client, tmp_path):
     cat = client.get("/api/agent/tools").json()
     names = {t["name"] for t in cat["tools"]}
-    assert "recall" in names and "activity_now" in names and len(names) == 15
-    assert {"scribe_minutes", "minutes_get", "scribe_import_file"} <= names and not any(n in names for n in ("scribe_delete", "scribe_start", "scribe_stop"))
-    assert client.post("/api/agent/call", json={"name": "activity_now", "arguments": {}}).status_code == 401
+    assert "recall" in names and "activity_now" in names and len(names) == 18
+    assert {"scribe_minutes", "minutes_get", "scribe_import_file", "transcribe_file", "transcribe_status", "transcribe_cancel"} <= names and not any(n in names for n in ("scribe_delete", "scribe_start", "scribe_stop"))
+    assert client.post("/api/agent/call", json={"name": "activity_now", "arguments": {}}, headers={"Authorization": ""}).status_code == 401
     from funes_hoard.hoard_link import family
     token = open(family.status()["token_file"], encoding="utf-8").read().strip()
     r = client.post("/api/agent/call", json={"name": "activity_now", "arguments": {}},
@@ -189,3 +192,18 @@ def test_deleted_range_is_no_longer_searchable(client):
     client.post("/api/privacy/delete-range", json={"start": 0, "end": 4_000_000_000})
     after = client.post("/api/agent/activity_search", json={"query": "DuckDB", "limit": 50}).json()
     assert after["items"] == []
+
+
+def test_per_tool_routes_need_the_bearer_token_like_call(client):
+    anonymous = {"Authorization": ""}
+    for tool in ("activity_now", "activity_pause", "recall_search", "scribe_import_file", "transcribe_file", "transcribe_cancel"):
+        r = client.post(f"/api/agent/{tool}", json={}, headers=anonymous)
+        assert r.status_code == 401 and r.json()["error"] == "unauthorized", tool
+    assert client.post("/api/agent/activity_now", json={}, headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.post("/api/agent/activity_now", json={}).status_code == 200  # the fixture carries the real token
+    assert client.get("/api/agent/tools", headers=anonymous).status_code == 200  # the catalogue is not a secret
+    assert client.post("/api/agent/call", json={"name": "activity_now"}, headers=anonymous).status_code == 401  # /call still checks it itself
+    # a paused collector must not be steerable without the token
+    client.post("/api/privacy/resume")
+    client.post("/api/agent/activity_pause", json={"minutes": 5}, headers=anonymous)
+    assert client.get("/api/status").json()["paused"] is False

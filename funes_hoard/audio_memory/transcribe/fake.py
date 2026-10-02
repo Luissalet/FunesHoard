@@ -45,3 +45,37 @@ class FakeTranscriber(Transcriber):
 
     def info(self) -> dict:
         return {"name": self.name, "model": "fake", "device": "cpu", "compute_type": "none", "loaded": True, "download": "ready", "gpu_lease": "disabled"}
+
+
+class FakeWhisperModel:
+    """A stand-in for `faster_whisper.WhisperModel` (what the shared `Transcriber` loads): the same fictional phrases, one segment per
+    ~2 s. A WAV file gives its real length; anything else counts as 6 s."""
+
+    def __init__(self, size: str = "fake", device: str = "cpu", compute: str = "int8", download_root: str = "", phrases: list[str] | None = None):
+        self.phrases = list(phrases or DEFAULT_PHRASES)
+        self._cursor = 0
+
+    def transcribe(self, audio, language=None, **_):
+        from types import SimpleNamespace
+
+        from ..audio.wav import read_wav
+
+        if isinstance(audio, str):
+            try:
+                samples, _rate = read_wav(audio)
+                duration = len(samples) / SAMPLE_RATE
+            except Exception:  # noqa: BLE001 - not a WAV: the fake only needs some length
+                duration = 6.0
+        else:
+            duration = len(audio) / SAMPLE_RATE
+        segments, start = [], 0.0
+        while start < duration:
+            end = min(duration, start + 2.0)
+            text = self.phrases[self._cursor % len(self.phrases)]
+            self._cursor += 1
+            word = SimpleNamespace(start=start, end=end, word=text.split()[0], probability=0.9)
+            segments.append(SimpleNamespace(start=start, end=end, text=" " + text, avg_logprob=-0.3, no_speech_prob=0.05, compression_ratio=1.2,
+                                            words=[word]))
+            start = end
+        info = SimpleNamespace(language=language or "es", language_probability=0.95, duration=duration)
+        return iter(segments), info

@@ -75,15 +75,28 @@ mcp = FastMCP(
         "checked against the transcript: cite the quoted evidence and its time, and if status is no_model say "
         "that no local model is available instead of writing minutes yourself. minutes_get gives the same minutes in a "
         "compact shape for other apps (title, date, attendees, action items with owner and due). scribe_import_file turns a local "
-        "audio or video file into a session without moving the original."
+        "audio or video file into a session without moving the original. transcribe_file gives the text of a file without keeping a session."
     ),
 )
 
+def _app_token() -> str:
+    """The Bearer token of the running app (`<data>/mcp-token`): the per-tool routes check it like `/api/agent/call` does.
+    Empty when the file cannot be read; the app then answers 401 and the message says where to point the adapter."""
+    data_dir = Path(os.environ.get("FUNES_DATA_DIR") or Path(__file__).resolve().parent.parent / "data")
+    token_file = Path(os.environ.get("FUNES_TOKEN_FILE") or data_dir / "mcp-token")
+    try:
+        return token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def _post(path: str, payload: dict) -> dict:
     url = _app_url()
+    token = _app_token()
     try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.post(f"{url}{path}", json={k: v for k, v in payload.items() if v is not None})
+        with httpx.Client(timeout=15.0, trust_env=False) as client:
+            resp = client.post(f"{url}{path}", json={k: v for k, v in payload.items() if v is not None},
+                               headers={"Authorization": f"Bearer {token}"})
     except httpx.ConnectError as exc:
         raise ToolError(UNAVAILABLE) from exc
     except httpx.TimeoutException as exc:
@@ -99,6 +112,8 @@ def _post(path: str, payload: dict) -> dict:
             body = body["detail"]
         code = body.get("error", f"http_{resp.status_code}") if isinstance(body, dict) else f"http_{resp.status_code}"
         message = body.get("message", resp.text[:200]) if isinstance(body, dict) else resp.text[:200]
+        if resp.status_code == 401:
+            message += " Point FUNES_DATA_DIR (or FUNES_TOKEN_FILE) at the running app's data folder."
         raise ToolError(f"{code}: {message}")
     return resp.json()
 
@@ -464,6 +479,42 @@ def scribe_import_file(path: str, title: str = "", kind: str = "other", language
     """
     return _audio_call("scribe_import_file", {"path": path, "title": title, "kind": kind, "language": language, "wait_s": wait_s},
                        timeout=90.0 + max(0.0, float(wait_s)))
+
+
+@mcp.tool(annotations=_READ)
+def transcribe_file(path: str, language: str = "auto", model: Optional[str] = None, word_timestamps: bool = True,
+                    initial_prompt: str = "", vad: bool = True, wait_s: float = 0) -> dict:
+    """Speech to text of an audio/video file by path, no session kept. Transcribir un archivo.
+
+    Transcribes a file already on this computer (absolute path) and returns {job_id, status, progress, language,
+    duration_s, text, segments [{start_s, end_s, text, words}], model, device, note, stats}; with wait_s (max 150) it
+    waits for the result, otherwise poll transcribe_status. Nothing is stored in Funes: no session, no copy of the
+    file. For the user's own recordings use scribe_import_file.
+    Sinónimos: transcribir, pasar a texto, audio a texto, subtítulos de un vídeo, dictado, speech to text.
+    """
+    return _audio_call("transcribe_file", {"path": path, "language": language, "model": model, "word_timestamps": word_timestamps,
+                                            "initial_prompt": initial_prompt, "vad": vad, "wait_s": wait_s},
+                       timeout=90.0 + min(150.0, max(0.0, float(wait_s))))
+
+
+@mcp.tool(annotations=_READ)
+def transcribe_status(job_id: str, wait_s: float = 0) -> dict:
+    """State and result of a transcription job started with transcribe_file.
+
+    Same answer as transcribe_file; wait_s (max 150) waits for it to finish. Finished jobs are kept for an hour.
+    Sinónimos: cómo va la transcripción, estado del trabajo, resultado de la transcripción.
+    """
+    return _audio_call("transcribe_status", {"job_id": job_id, "wait_s": wait_s}, timeout=90.0 + min(150.0, max(0.0, float(wait_s))))
+
+
+@mcp.tool(annotations=_IDEMPOTENT_WRITE)
+def transcribe_cancel(job_id: str) -> dict:
+    """Cancel a transcription job started with transcribe_file (idempotent).
+
+    A finished job is left as it is and its own status returned.
+    Sinónimos: cancelar la transcripción, parar el trabajo.
+    """
+    return _audio_call("transcribe_cancel", {"job_id": job_id})
 
 
 @mcp.tool(annotations=_DELETE)

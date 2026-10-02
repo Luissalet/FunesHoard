@@ -106,6 +106,25 @@ class ImportFileArgs(BaseModel):
     wait_s: float = Field(0, ge=0, le=3600, description="Seconds to wait for the transcription to finish. 0 returns the session at once; poll scribe_sessions or scribe_transcript later.")
 
 
+class TranscribeFileArgs(BaseModel):
+    path: str = Field(..., min_length=1, max_length=1024, description="Absolute path of an audio/video file on this computer (wav, mp3, m4a, mp4, mkv, webm...). Paths, never bytes.")
+    language: str = Field("auto", max_length=12, description="'auto' (detect it) or a language code such as 'es' or 'en'.")
+    model: str | None = Field(None, max_length=60, description="Whisper size (tiny, base, small, medium, large-v3...). Empty: the one Funes is configured with.")
+    word_timestamps: bool = Field(True, description="Timestamp every word.")
+    initial_prompt: str = Field("", max_length=1000, description="Names and jargon to prime the model with.")
+    vad: bool = Field(True, description="Skip silence before decoding.")
+    wait_s: float = Field(0, ge=0, le=150, description="Seconds to wait for the job (max 150). 0 returns {job_id, status} at once; poll transcribe_status.")
+
+
+class TranscribeStatusArgs(BaseModel):
+    job_id: str = Field(..., min_length=1, max_length=64)
+    wait_s: float = Field(0, ge=0, le=150, description="Seconds to wait for the job to finish (max 150).")
+
+
+class TranscribeCancelArgs(BaseModel):
+    job_id: str = Field(..., min_length=1, max_length=64)
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -307,6 +326,18 @@ def run_import_file(svc: Services, a: ImportFileArgs):
     return out
 
 
+def run_transcribe_file(svc: Services, a: TranscribeFileArgs):
+    return svc.stt.submit(a.path, a.language, a.model, a.word_timestamps, a.initial_prompt, a.vad, a.wait_s)
+
+
+def run_transcribe_status(svc: Services, a: TranscribeStatusArgs):
+    return svc.stt.status(a.job_id, a.wait_s)
+
+
+def run_transcribe_cancel(svc: Services, a: TranscribeCancelArgs):
+    return svc.stt.cancel(a.job_id)
+
+
 def run_delete(svc: Services, a: SessionIdArgs):
     _require(svc, a.session_id)
     if svc.recorder.current and svc.recorder.current.session_id == a.session_id:
@@ -327,6 +358,9 @@ TOOLS: list[Tool] = [
     Tool("scribe_minutes", "Meeting minutes of a session: summary, decisions, action items with evidence. Acta de reunión.\nWrites (or returns the stored) minutes of a transcribed session with the local model: summary, decisions, action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s, speaker, literal quote}}, open questions and participants. Every action item's quote is verified against the transcript and items without one are dropped. status: ready | no_model (no local language model; nothing was invented) | not_ready (still transcribing) | no_speech | error. regenerate=true replaces stored minutes. Long meetings can take minutes.\nSinónimos: acta, minutas, resumen de la reunión, acuerdos, tareas pendientes, qué se acordó, quién se comprometió, compromisos, action items, decisiones.", MinutesArgs, _ann(False, False, True), run_minutes),
     Tool("minutes_get", "Minutes of a meeting for other apps: title, date, attendees, action items with owner and due, summary.\nReturns the minutes (acta) of a transcribed meeting session in a compact shape: {title, date, attendees: [names], action_items: [{text, owner (yo | a name | empty), counterpart, due (YYYY-MM-DD or null), due_text, quote}], summary, decisions, open_questions}. Writes them with the local model when none are stored (generate=true, the default); status is ready, or no_model, not_ready, no_speech, not_generated. minutes_id is the session id announced by funes.minutes.ready.\nSinónimos: acta, minutas, asistentes, quién estuvo en la reunión, tareas de la reunión, acuerdos, resumen de la reunión.", MinutesGetArgs, _ann(False, False, True), run_minutes_get),
     Tool("scribe_import_file", "Import a local audio/video file as a session and optionally wait for its transcript. Importar audio.\nCreates a session from a file already on this computer, by absolute path (the original is copied, never moved or deleted), and transcribes it in the background. With wait_s > 0 it waits up to that many seconds and returns {session, status, transcript_text} (cut at 60000 characters with next_from_s to continue). Use it to get the text of a recorded class, call or video.\nSinónimos: importar audio, importar vídeo, transcribir un archivo, transcribe este vídeo, pasar a texto, grabación existente, mp3, mp4, subir audio.", ImportFileArgs, _ann(False, False, False), run_import_file),
+    Tool("transcribe_file", "Speech to text of an audio/video file by path, no session kept. Transcribir un archivo.\nTranscribes a file already on this computer (absolute path) and returns {job_id, status, progress, language, duration_s, text, segments [{start_s, end_s, text, words}], model, device, note, stats}; with wait_s (max 150) it waits for the result, otherwise poll transcribe_status. Nothing is stored in Funes: no session, no copy of the file. For the user's own recordings use scribe_import_file.\nSinónimos: transcribir, pasar a texto, audio a texto, subtítulos de un vídeo, dictado, speech to text.", TranscribeFileArgs, _ann(True), run_transcribe_file),
+    Tool("transcribe_status", "State and result of a transcription job started with transcribe_file.\nSame answer as transcribe_file; wait_s (max 150) waits for it to finish. Finished jobs are kept for an hour.\nSinónimos: cómo va la transcripción, estado del trabajo, resultado de la transcripción.", TranscribeStatusArgs, _ann(True), run_transcribe_status),
+    Tool("transcribe_cancel", "Cancel a transcription job started with transcribe_file (idempotent).\nA finished job is left as it is and its own status returned.\nSinónimos: cancelar la transcripción, parar el trabajo.", TranscribeCancelArgs, _ann(False, False, True), run_transcribe_cancel),
     Tool("scribe_delete", "Permanently delete a session (only when asked; no undo). Keywords: borrar grabación, eliminar sesión.\nPermanently delete a session: audio, transcript and notes. Only when the user explicitly asks; there is no undo.\nSinónimos: borrar, eliminar, borra la grabación, elimina la reunión, olvidar.", SessionIdArgs, _ann(False, True, True), run_delete),
 ]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

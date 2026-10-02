@@ -604,13 +604,16 @@ def create_app(
 
     # ------------------------------------------- audio tools for the family --
     # Other Hoards reach Funes through the hub's proxy (POST /api/agent/call), which only
-    # knows this surface. Three audio tools are published on it: meeting minutes in two shapes
+    # knows this surface. Six audio tools are published on it: meeting minutes in two shapes
     # (`scribe_minutes` in full, which People's Hoard turns into commitments, and `minutes_get`
-    # in the compact shape the family's rules and apps ask for) and import-by-path (a recipe or
-    # class video becomes a transcript for the app that asked). The rest of the audio tools
+    # in the compact shape the family's rules and apps ask for), import-by-path (a recipe or
+    # class video becomes a session) and the family's speech-to-text service (`transcribe_file`,
+    # `transcribe_status`, `transcribe_cancel`: the text of a file for the app that asked, no
+    # session kept). The rest of the audio tools
     # (start, stop, delete...) stay on the stdio bridge, never on the family surface.
     if audio_app is not None:
         from funes_hoard.audio_memory import agent_tools as audio_tools
+        from funes_hoard.audio_memory.stt_jobs import NoModel
 
         def _scribe_route(tool_name: str):
             model = audio_tools.TOOLS_BY_NAME[tool_name].input_model
@@ -629,6 +632,9 @@ def create_app(
                 except ValueError as exc:
                     _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, False, str(exc))
                     raise BadInput("bad_arguments", str(exc))
+                except NoModel as exc:
+                    _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, False, str(exc))
+                    raise HTTPException(status_code=503, detail={"error": "no_model", "message": str(exc)})
                 except RuntimeError as exc:
                     _log_agent_call(tool_name, summary, (time.perf_counter() - started) * 1000, False, str(exc))
                     raise HTTPException(status_code=503, detail={"error": "unavailable", "message": str(exc)})
@@ -639,7 +645,7 @@ def create_app(
             endpoint.__name__ = f"agent_{tool_name}"
             return endpoint
 
-        for _tool in ("scribe_minutes", "minutes_get", "scribe_import_file"):
+        for _tool in ("scribe_minutes", "minutes_get", "scribe_import_file", "transcribe_file", "transcribe_status", "transcribe_cancel"):
             app.add_api_route(f"/api/agent/{_tool}", _scribe_route(_tool), methods=["POST"])
 
     # --------------------------------------------------------- UI routes --
