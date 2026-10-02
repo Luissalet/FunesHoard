@@ -1,65 +1,35 @@
-"""/api/agent/* — the bridge used by mcp_server.py (Bearer token from <DATA_DIR>/mcp-token)."""
+"""/api/agent/* — the bridge used by mcp_server.py (Bearer token from <DATA_DIR>/mcp-token). The routes come from the shared agent kit."""
 
 from __future__ import annotations
 
-import secrets
-import time
-from typing import Any
+from fastapi import Request
+from pydantic import ValidationError
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, ValidationError
+from funes_hoard.hoard_link.agentkit import AppError, UnknownTool, make_agent_router
 
 from ..agent_tools import AGENT_INSTRUCTIONS, call_tool, tool_catalog
+from ..stt_jobs import NoModel
 from .deps import services
-from funes_hoard.hoard_link import family
-
-router = APIRouter(prefix="/api/agent")
 
 
-class CallBody(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    arguments: dict[str, Any] | None = None
-    caller: str | None = Field(default=None, max_length=80)  # who asks (the hub's proxy fills it)
-
-
-@router.get("/tools")
-def tools():
-    return {"instructions": AGENT_INSTRUCTIONS, "tools": tool_catalog()}
-
-
-@router.post("/call")
-def call(request: Request, body: CallBody):
-    svc = services(request)
-    header = request.headers.get("authorization", "")
-    given = header[7:].strip() if header.startswith("Bearer ") else ""
-    if not given or not secrets.compare_digest(given, svc.token):
-        raise HTTPException(401, "Invalid MCP token.")
-    t0 = time.monotonic()
-    outcome = {"ok": False, "error": ""}
+def _call(name: str, arguments: dict, request: Request):
+    """Run a tool and give its failures the codes the family contract names: a missing thing is 404, a service that cannot run is 503."""
     try:
-        result = call_tool(svc, body.name, body.arguments)
-        outcome["ok"] = True
-        return result
-    except KeyError as error:
-        outcome["error"] = str(error.args[0]) if error.args else str(error)
-        raise HTTPException(404, str(error.args[0])) from error
-    except ValidationError as error:
-        outcome["error"] = str(error.args[0]) if error.args else str(error)
-        issues = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'input'}: {e['msg']}" for e in error.errors())
-        raise HTTPException(400, issues) from error
+        return call_tool(services(request), name, arguments)
+    except (UnknownTool, ValidationError):
+        raise  # the router answers 404 unknown_tool and 400 invalid_arguments itself
+    except NoModel as error:
+        raise AppError("no_model", str(error), status=503) from error
     except LookupError as error:
-        outcome["error"] = str(error.args[0]) if error.args else str(error)
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        outcome["error"] = str(error.args[0]) if error.args else str(error)
-        raise HTTPException(400, str(error)) from error
+        raise AppError("not_found", str(error.args[0]) if error.args else "Not found.") from error
     except RuntimeError as error:
-        outcome["error"] = str(error.args[0]) if error.args else str(error)
-        raise HTTPException(503, str(error)) from error
-    except Exception as error:  # noqa: BLE001 — recorded, then re-raised as before
-        outcome["error"] = f"{type(error).__name__}: {error}"
-        raise
-    finally:
-        # One agent.call event per call on the family bus (the audit trail).
-        family.record_call(body.name, outcome["ok"], int((time.monotonic() - t0) * 1000),
-                           caller=body.caller or "", error=outcome["error"])
+        raise AppError("unavailable", str(error)) from error
+
+
+router = make_agent_router(
+    tools_fn=tool_catalog,
+    call_fn=_call,
+    token_fn=lambda request: services(request).token,
+    instructions=AGENT_INSTRUCTIONS,
+    app_name="funes-audio",
+)

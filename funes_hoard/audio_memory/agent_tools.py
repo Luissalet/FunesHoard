@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+from funes_hoard.hoard_link import agentkit
+from funes_hoard.hoard_link.agentkit import Empty, Tool, ann as _ann
 
 from .export import FORMATS, hms, render
 from .importer import ALLOWED_EXT, MAX_UPLOAD_BYTES
@@ -28,10 +30,6 @@ scribe_import_file turns an audio or video file already on this computer into a 
 
 KindArg = Literal["meeting", "interview", "note", "other"]
 LangArg = Literal["auto", "es", "en"]
-
-
-class Empty(BaseModel):
-    pass
 
 
 class SessionsArgs(BaseModel):
@@ -123,19 +121,6 @@ class TranscribeStatusArgs(BaseModel):
 
 class TranscribeCancelArgs(BaseModel):
     job_id: str = Field(..., min_length=1, max_length=64)
-
-
-@dataclass(frozen=True)
-class Tool:
-    name: str
-    description: str
-    input_model: type[BaseModel]
-    annotations: dict[str, bool]
-    run: Callable[[Services, Any], Any]
-
-
-def _ann(read_only: bool, destructive: bool = False, idempotent: bool | None = None) -> dict[str, bool]:
-    return {"readOnlyHint": read_only, "destructiveHint": destructive, "idempotentHint": read_only if idempotent is None else idempotent, "openWorldHint": False}
 
 
 def _session_brief(svc: Services, s: dict) -> dict:
@@ -368,15 +353,9 @@ assert all(f in FORMATS for f in ("txt", "srt", "md"))
 
 
 def tool_catalog() -> list[dict]:
-    return [
-        {"name": t.name, "description": t.description, "annotations": t.annotations, "inputSchema": t.input_model.model_json_schema(by_alias=True)}
-        for t in TOOLS
-    ]
+    return agentkit.tool_catalog(TOOLS)
 
 
 def call_tool(services: Services, name: str, arguments: dict | None) -> Any:
-    tool = TOOLS_BY_NAME.get(name)
-    if tool is None:
-        raise KeyError(f"Unknown tool: {name}")
-    args = tool.input_model.model_validate(arguments or {})
-    return tool.run(services, args)
+    """Validate the arguments, run the tool and make the result a dict. Never capped: transcripts page themselves (`max_chars`)."""
+    return agentkit.call_tool(TOOLS_BY_NAME, services, name, arguments, cap=False)

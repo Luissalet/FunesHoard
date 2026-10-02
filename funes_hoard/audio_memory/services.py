@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
 import shutil
 import time
 
@@ -19,6 +18,7 @@ from .recorder import Recorder
 from .settings import SettingsPatch, SettingsStore
 from .store import SessionStore
 from funes_hoard.hoard_link.media import stt
+from funes_hoard.hoard_link.tokens import read_or_create_token
 
 from .stt_jobs import SttJobs
 from .transcribe import select_transcriber, whisper_available
@@ -32,14 +32,9 @@ log = logging.getLogger("scribe")
 
 
 def write_token(config: Config) -> str:
+    """The access token is created once and kept: a restart must not lock out a bridge that is already connected."""
     config.data_dir.mkdir(parents=True, exist_ok=True)
-    token = secrets.token_hex(32)
-    config.token_path.write_text(token, encoding="utf-8")
-    try:
-        config.token_path.chmod(0o600)
-    except OSError:
-        pass
-    return token
+    return read_or_create_token(config.token_path)
 
 
 class Services:

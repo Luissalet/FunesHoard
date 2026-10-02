@@ -17,7 +17,6 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -34,6 +33,7 @@ from funes_hoard.errors import BadInput
 from funes_hoard.git_watch import GitCommitsPoller, configured_authors
 from funes_hoard.hoard_link import BackendError, Link, Unavailable
 from funes_hoard.hoard_link import family
+from funes_hoard.hoard_link.guard import install_guard, parse_allowed_hosts
 from funes_hoard.hoard_link.tokens import check_bearer, read_token
 from funes_hoard.jobs import JobManager
 from funes_hoard.recall import recall as run_recall
@@ -239,7 +239,6 @@ class SourcePatchIn(BaseModel):
     enabled: Optional[bool] = None
 
 
-LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 AGENT_TOOLS = (
     "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline", "activity_summary",
     "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
@@ -247,34 +246,6 @@ AGENT_TOOLS = (
 )
 PRIVACY_MATCH_TYPES = ("app", "title_regex")
 CLASSIFY_MATCH_TYPES = ("app", "title_regex", "domain")
-
-
-def _split_host(value: str) -> tuple[str, Optional[int], bool]:
-    """'127.0.0.1:8813' -> ('127.0.0.1', 8813, True); malformed -> ok=False."""
-    value = value.strip().lower()
-    if value.startswith("["):
-        end = value.find("]")
-        if end == -1:
-            return "", None, False
-        host, rest = value[: end + 1], value[end + 1:]
-    else:
-        host, sep, port = value.partition(":")
-        rest = f":{port}" if sep else ""
-    if not rest:
-        return host, None, True
-    if not rest.startswith(":") or not rest[1:].isdigit():
-        return "", None, False
-    return host, int(rest[1:]), True
-
-
-def _host_allowed(host: str, port: Optional[int], app_port: Optional[int], allowed_hosts: tuple[str, ...] = ()) -> bool:
-    from funes_hoard.audio_memory.guard import is_allowed_host
-
-    if host not in LOOPBACK_HOSTS:
-        return is_allowed_host(host, allowed_hosts) and bool(allowed_hosts)
-    if app_port is None:
-        return True
-    return port == app_port or (port is None and app_port == 80)
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -308,8 +279,6 @@ def create_app(
     _setup_logging(data_dir)
     db = Database(data_dir)
     sources_registry = SourceRegistry(data_dir, app_port=port)
-    from funes_hoard.audio_memory.guard import is_allowed_host, parse_allowed_hosts
-
     allowed_hosts = parse_allowed_hosts(os.environ.get("FUNES_ALLOWED_HOSTS"))
     link_factory = link_factory or Link
     if link is None:
@@ -387,34 +356,8 @@ def create_app(
                 return _error(401, "unauthorized", "Send the Bearer token from data/mcp-token.")
         return await call_next(request)
 
-    @app.middleware("http")
-    async def browser_attack_guard(request: Request, call_next):
-        # DNS rebinding: a hostile page whose domain resolves to 127.0.0.1
-        # still sends its own name (or the wrong port) in Host.
-        host, host_port, ok = _split_host(request.headers.get("host", ""))
-        if not ok or not _host_allowed(host, host_port, port, allowed_hosts):
-            return _error(403, "forbidden_host", "Host header does not match this app's loopback address.")
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
-            if request.headers.get("sec-fetch-site") == "cross-site":
-                return _error(403, "forbidden_origin", "Cross-site request rejected.")
-            origin = request.headers.get("origin")
-            if origin is not None:
-                parts = urlsplit(origin)
-                try:
-                    origin_port = parts.port
-                except ValueError:
-                    origin_port = -1
-                if origin_port is None:
-                    origin_port = 443 if parts.scheme == "https" else 80
-                own = (
-                    parts.scheme == "http"
-                    and (parts.hostname or "") in LOOPBACK_HOSTS
-                    and (port is None or origin_port == port)
-                ) or (host not in LOOPBACK_HOSTS and (parts.hostname or "").lower() == host
-                      and is_allowed_host(host, allowed_hosts))
-                if not own:
-                    return _error(403, "forbidden_origin", "Origin does not match this app.")
-        return await call_next(request)
+    # DNS rebinding and cross-site writes: the shared guard (host and Origin must name this app, with its exact port).
+    install_guard(app, port_getter=lambda: port, allowed_env="FUNES_ALLOWED_HOSTS", allowed_hosts=allowed_hosts, strict_ports=True)
 
     # ----------------------------------------------------------- errors --
     @app.exception_handler(BadInput)

@@ -7,21 +7,17 @@ from fastapi import APIRouter, Request
 from .. import SERVICE, __version__
 from ..settings import SettingsPatch
 from .deps import services
-from funes_hoard.hoard_link import family
+from funes_hoard.hoard_link.service import health_router
 
 router = APIRouter(prefix="/api")
 
 
-@router.get("/health")
-def health(request: Request):
-    transcriber_info = services(request).transcriber.info()
-    return {
-        "service": SERVICE,
-        "version": __version__,
-        "dataDirConfigured": request.app.state.config.data_dir_configured,
-        "hoard_link": family.health_block(),
-        "gpu_lease": transcriber_info.get("gpu_lease", "disabled"),
-    }
+def _health_extra(request: Request) -> dict:
+    return {"dataDirConfigured": request.app.state.config.data_dir_configured,
+            "gpu_lease": services(request).transcriber.info().get("gpu_lease", "disabled")}
+
+
+health = health_router(SERVICE, __version__, extra=_health_extra)
 
 
 @router.get("/status")
