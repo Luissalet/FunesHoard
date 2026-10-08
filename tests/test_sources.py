@@ -119,8 +119,16 @@ async def test_call_source_tool_needs_a_token(tmp_path, monkeypatch):
     monkeypatch.setattr(family, "_hub", lambda: "http://127.0.0.1:1")
     reg = SourceRegistry(tmp_path)
     source = reg.get("argus")
-    with pytest.raises(SourceCallError) as exc_info:
-        await call_source_tool(source, "screen_status", {})
+
+    # Whether the hub fallback is tried depends on state other tests leave behind (Funes's own token file), and
+    # whatever listens on the patched hub address would answer it. Nothing may answer here, whatever runs on this
+    # machine or ran before: every request fails to connect.
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(SourceCallError) as exc_info:
+            await call_source_tool(source, "screen_status", {}, client=client)
     assert exc_info.value.reason == "no_token"
 
 

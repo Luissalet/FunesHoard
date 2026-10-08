@@ -10,6 +10,9 @@ from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
+from pathlib import Path
+
+from funes_hoard import audio_memory
 from funes_hoard.audio_memory.merge import Labelled
 from tests.fakes import FakeLink
 
@@ -27,10 +30,13 @@ def test_embedded_audio_status_and_agent_tools(tmp_path, monkeypatch):
         tools = client.get("/audio/api/agent/tools")
         assert tools.status_code == 200, tools.text
         assert "scribe_transcript" in str(tools.json())
-        assert client.get("/audio/").status_code == 200
-        assert "/audio/assets/" in client.get("/audio/").text
-        assert client.get("/audio/manifest.webmanifest").json()["scope"] == "/audio/"
-        assert "funes-audio-assets" in client.get("/audio/sw.js").text
+        # The audio UI is a build output (funes_hoard/audio_memory/static is not tracked): a checkout without the
+        # build serves the API but not the pages, so only check the pages when they were built.
+        if (Path(audio_memory.__file__).resolve().parent / "static" / "index.html").is_file():
+            assert client.get("/audio/").status_code == 200
+            assert "/audio/assets/" in client.get("/audio/").text
+            assert client.get("/audio/manifest.webmanifest").json()["scope"] == "/audio/"
+            assert "funes-audio-assets" in client.get("/audio/sw.js").text
         assert (tmp_path / "audio" / "mcp-token").is_file()
         source = app.state.sources_registry.get("scribe")
         assert source.base_url == "http://127.0.0.1:18877/audio"
