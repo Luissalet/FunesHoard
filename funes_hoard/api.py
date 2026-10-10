@@ -222,6 +222,7 @@ class RecallArgs(BaseModel):
     window_minutes: float = Field(default=15, ge=1, le=24 * 60)
     sources: Optional[list[str]] = None
     limit_per_source: int = Field(default=20, ge=1, le=100)
+    include_dropped: bool = False
 
 
 class RecallSearchArgs(BaseModel):
@@ -230,6 +231,7 @@ class RecallSearchArgs(BaseModel):
     until: Optional[str] = None
     sources: Optional[list[str]] = None
     limit_per_source: int = Field(default=20, ge=1, le=100)
+    include_dropped: bool = False
 
 
 class SourcePatchIn(BaseModel):
@@ -519,7 +521,7 @@ def create_app(
     @app.post("/api/agent/recall")
     async def agent_recall(args: RecallArgs):
         async def _recall_with_now():
-            out = await run_recall(db, sources_registry, args.at, args.window_minutes, args.sources, args.limit_per_source)
+            out = await run_recall(db, sources_registry, args.at, args.window_minutes, args.sources, args.limit_per_source, include_dropped=args.include_dropped)
             # «¿Qué estoy haciendo ahora?» answered through recall: the current window is still
             # open, so no finished episode covers it yet. Say what is in the foreground too.
             if _means_now(args.at) and isinstance(out, dict):
@@ -530,7 +532,7 @@ def create_app(
             return out
 
         return await run_agent_async(
-            "recall", _args(at=args.at, window_minutes=args.window_minutes, sources=args.sources, limit_per_source=args.limit_per_source),
+            "recall", _args(at=args.at, window_minutes=args.window_minutes, sources=args.sources, limit_per_source=args.limit_per_source, include_dropped=args.include_dropped),
             _recall_with_now(),
         )
 
@@ -538,8 +540,8 @@ def create_app(
     async def agent_recall_search(args: RecallSearchArgs):
         return await run_agent_async(
             "recall_search",
-            _args(query=args.query, since=args.since, until=args.until, sources=args.sources, limit_per_source=args.limit_per_source),
-            run_recall_search(db, sources_registry, args.query, args.since, args.until, args.sources, args.limit_per_source),
+            _args(query=args.query, since=args.since, until=args.until, sources=args.sources, limit_per_source=args.limit_per_source, include_dropped=args.include_dropped),
+            run_recall_search(db, sources_registry, args.query, args.since, args.until, args.sources, args.limit_per_source, include_dropped=args.include_dropped),
         )
 
     @app.post("/api/agent/sources_status")
@@ -660,18 +662,18 @@ def create_app(
     # --------------------------------------------------------- recall --
     @app.get("/api/recall")
     async def ui_recall(
-        at: Optional[str] = None, window: float = 15, sources: Optional[str] = None, limit_per_source: int = 20,
+        at: Optional[str] = None, window: float = 15, sources: Optional[str] = None, limit_per_source: int = 20, include_dropped: bool = False,
     ):
         wanted = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
-        return await run_recall(db, sources_registry, at, window, wanted, limit_per_source)
+        return await run_recall(db, sources_registry, at, window, wanted, limit_per_source, include_dropped=include_dropped)
 
     @app.get("/api/recall/search")
     async def ui_recall_search(
         query: str, since: Optional[str] = None, until: Optional[str] = None,
-        sources: Optional[str] = None, limit_per_source: int = 20,
+        sources: Optional[str] = None, limit_per_source: int = 20, include_dropped: bool = False,
     ):
         wanted = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
-        return await run_recall_search(db, sources_registry, query, since, until, wanted, limit_per_source)
+        return await run_recall_search(db, sources_registry, query, since, until, wanted, limit_per_source, include_dropped=include_dropped)
 
     @app.get("/api/sources")
     def ui_sources_get():

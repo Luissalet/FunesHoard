@@ -1,6 +1,6 @@
 import { RefreshCw, Search as SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, type RecallItem, type RecallResponse, type SourceHealthItem, type SourceItem } from "../api";
+import { api, errorMessage, type RecallContradiction, type RecallItem, type RecallResponse, type SourceHealthItem, type SourceItem } from "../api";
 import { STRINGS, type Lang } from "../i18n";
 import { Badge, EmptyState } from "./Common";
 
@@ -44,7 +44,9 @@ function RecallItemsList({ result, lang, t }: { result: RecallResponse | null; l
       {result.items.map((item, i) => (
         <div
           key={`${item.source}-${item.citation}-${i}`}
+          title={item.discard_reason}
           style={{
+            opacity: item.status ? 0.55 : 1,
             display: "flex",
             gap: 12,
             alignItems: "flex-start",
@@ -54,10 +56,30 @@ function RecallItemsList({ result, lang, t }: { result: RecallResponse | null; l
         >
           <Badge text={sourceLabel(t, item.source)} color={sourceColor(item.source)} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13 }}>{item.text}</div>
+            <div style={{ fontSize: 13, textDecoration: item.status ? "line-through" : undefined }}>{item.text}</div>
+            {item.status && <div style={{ fontSize: 11 }}><Badge text={t.recall_dropped_badge} color="var(--cat-other)" /> {item.kept_citation}</div>}
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
               {itemTime(item, lang)} · <code>{item.citation}</code>
             </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ContradictionsNote({ items, lang, t }: { items: RecallContradiction[]; lang: Lang; t: Strings }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="card" role="note" data-testid="contradictions-note" style={{ marginBottom: 12, borderLeft: "3px solid var(--warning, #d97706)" }}>
+      <div style={{ fontWeight: 600, fontSize: 13 }}>{t.recall_contradictions} ({items.length})</div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>{t.recall_contradictions_hint}</div>
+      {items.map((c, i) => (
+        <div key={`${c.dropped.citation}-${i}`} style={{ fontSize: 12, marginTop: 4 }}>
+          <div>{lang === "es" ? c.reason : c.reason_en}</div>
+          <div style={{ color: "var(--text-muted)" }}>
+            {t.recall_kept}: <code>{c.kept.citation}</code> {c.kept.text.slice(0, 80)} · {t.recall_dropped}: <code>{c.dropped.citation}</code>{" "}
+            <s>{c.dropped.text.slice(0, 80)}</s>
           </div>
         </div>
       ))}
@@ -163,16 +185,17 @@ export function RecallTimelineView({ lang }: { lang: Lang }) {
   const [result, setResult] = useState<RecallResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [includeDropped, setIncludeDropped] = useState(false);
 
   const runRecall = useCallback(() => {
     setLoading(true);
     setError(null);
     api
-      .recall({ at: at || undefined, window: windowMinutes })
+      .recall({ at: at || undefined, window: windowMinutes, include_dropped: includeDropped ? "true" : undefined })
       .then(setResult)
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
-  }, [at, windowMinutes]);
+  }, [at, windowMinutes, includeDropped]);
 
   useEffect(runRecall, [runRecall]);
 
@@ -181,7 +204,7 @@ export function RecallTimelineView({ lang }: { lang: Lang }) {
     setLoading(true);
     setError(null);
     api
-      .recallSearch(query.trim(), {})
+      .recallSearch(query.trim(), { include_dropped: includeDropped ? "true" : undefined })
       .then(setResult)
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
@@ -209,6 +232,9 @@ export function RecallTimelineView({ lang }: { lang: Lang }) {
                 </option>
               ))}
             </select>
+          </label>
+          <label style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            <input type="checkbox" checked={includeDropped} onChange={(e) => setIncludeDropped(e.target.checked)} /> {t.recall_show_dropped}
           </label>
           <button className="btn btn-ghost" onClick={runRecall} title={lang === "es" ? "Actualizar" : "Refresh"}>
             <RefreshCw size={14} />
@@ -241,6 +267,7 @@ export function RecallTimelineView({ lang }: { lang: Lang }) {
 
       {error && <EmptyState title={t.load_error} body={error} />}
       {!error && loading && !result && null}
+      {!error && result?.contradictions && <ContradictionsNote items={result.contradictions} lang={lang} t={t} />}
       {!error && <RecallItemsList result={result} lang={lang} t={t} />}
 
       <div style={{ marginTop: 16 }}>

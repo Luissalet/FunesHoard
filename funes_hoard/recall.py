@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 import httpx
 
+from funes_hoard import contradictions as _contra
 from funes_hoard.core.summary import clip_spans
 from funes_hoard.errors import BadInput
 from funes_hoard.queries import activity_search as _funes_activity_search
@@ -328,7 +329,7 @@ async def _gather(sources: list[Source], run_one, client: httpx.AsyncClient) -> 
 async def recall(
     db, registry: SourceRegistry, at: Optional[str] = None, window_minutes: float = DEFAULT_WINDOW_MINUTES,
     sources: Optional[list[str]] = None, limit_per_source: int = DEFAULT_LIMIT_PER_SOURCE,
-    now: Optional[float] = None, http_client: Optional[httpx.AsyncClient] = None,
+    now: Optional[float] = None, http_client: Optional[httpx.AsyncClient] = None, include_dropped: bool = False,
 ) -> dict:
     """Merged, time-sorted timeline around `at` +/- `window_minutes`, across
     Funes's own episodes and every enabled/selected source."""
@@ -362,21 +363,23 @@ async def recall(
     unavailable.extend(remote_unavailable)
 
     items.sort(key=lambda it: it.get("time") or "", reverse=True)
+    items, contradictions = _contra.resolve(items, include_dropped)
     return {
+        "contradictions": contradictions,
         "at": iso_local(center),
         "window_minutes": window_minutes,
         "start": iso_local(start_ts),
         "end": iso_local(end_ts),
         "evidence_note": "Funes episode titles identify foreground windows, not edits, commands, intent or causes.",
         "items": items,
-        "summary": {"counts": counts, "total": len(items), "unavailable": unavailable},
+        "summary": {"counts": counts, "total": len(items), "unavailable": unavailable, "dropped_by_contradiction": len(contradictions)},
     }
 
 
 async def recall_search(
     db, registry: SourceRegistry, query: str, since: Optional[str] = None, until: Optional[str] = None,
     sources: Optional[list[str]] = None, limit_per_source: int = DEFAULT_LIMIT_PER_SOURCE,
-    now: Optional[float] = None, http_client: Optional[httpx.AsyncClient] = None,
+    now: Optional[float] = None, http_client: Optional[httpx.AsyncClient] = None, include_dropped: bool = False,
 ) -> dict:
     """Text search for `query` across Funes's own history and every enabled/
     selected source, merged and time-sorted, defaulting to the last 7 days."""
@@ -413,12 +416,14 @@ async def recall_search(
     unavailable.extend(remote_unavailable)
 
     items.sort(key=lambda it: it.get("time") or "", reverse=True)
+    items, contradictions = _contra.resolve(items, include_dropped)
     return {
+        "contradictions": contradictions,
         "query": query,
         "since": iso_local(since_ts),
         "until": iso_local(until_ts),
         "items": items,
-        "summary": {"counts": counts, "total": len(items), "unavailable": unavailable},
+        "summary": {"counts": counts, "total": len(items), "unavailable": unavailable, "dropped_by_contradiction": len(contradictions)},
     }
 
 

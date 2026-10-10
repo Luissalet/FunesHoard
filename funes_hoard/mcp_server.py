@@ -309,7 +309,7 @@ def activity_pause(minutes: float = 15) -> dict:
 
 @mcp.tool(annotations=_READ)
 def recall(
-    at: Optional[str] = None, window_minutes: float = 15, sources: Optional[list[str]] = None, limit_per_source: int = 20,
+    at: Optional[str] = None, window_minutes: float = 15, sources: Optional[list[str]] = None, limit_per_source: int = 20, include_dropped: bool = False,
 ) -> dict:
     """What was I doing at a time: screen, clipboard, audio and PC in one call / qué estaba haciendo a esa hora.
     Merged, time-sorted timeline around `at` +/- `window_minutes` (default 15
@@ -331,18 +331,24 @@ def recall(
     With `at` omitted or now/ahora the result also carries `now`: the
     foreground app and window right now (the same as activity_now), since
     the window still open has no finished episode in the timeline yet.
+    Contradictions: memories that disagree about the same subject (different time/date/value,
+    one states and another denies, opposite states) are resolved deterministically -- the best-supported
+    or most recent one stays, the others leave items and are listed in contradictions:
+    [{kept, dropped, reason}] (nothing is deleted). Pass include_dropped=true to keep them in items,
+    marked status "descartado por contradiccion" with kept_citation / hay memorias que se contradicen:
+    se conserva la mejor respaldada o mas reciente.
     Keywords: what was I doing, what was on screen, what did I copy, timeline, recall, screen, clipboard, audio, at that time, around then, with citations, qué estaba haciendo, qué hacía, qué pasó, qué había en pantalla, qué copié, a esa hora, a las, de la madrugada, esta mañana, ayer, línea de tiempo, pantalla, portapapeles, audio, con citas.
     """
     return _post(
         "/api/agent/recall",
-        {"at": at, "window_minutes": window_minutes, "sources": sources, "limit_per_source": limit_per_source},
+        {"at": at, "window_minutes": window_minutes, "sources": sources, "limit_per_source": limit_per_source, "include_dropped": include_dropped},
     )
 
 
 @mcp.tool(annotations=_READ)
 def recall_search(
     query: str, since: Optional[str] = None, until: Optional[str] = None,
-    sources: Optional[list[str]] = None, limit_per_source: int = 20,
+    sources: Optional[list[str]] = None, limit_per_source: int = 20, include_dropped: bool = False,
 ) -> dict:
     """Find a topic across screen, clipboard, audio and PC memory / busca un tema en todas las apps.
     Full-text search for `query` across Funes's own history, Argus (screen
@@ -352,11 +358,17 @@ def recall_search(
     ("ayer" = from yesterday 00:00) or ISO dates/datetimes. `sources` limits
     the fan-out to those ids. Prefer recall() when the question is about a
     time instead of a topic.
+    Contradictions: memories that disagree about the same subject (different time/date/value,
+    one states and another denies, opposite states) are resolved deterministically -- the best-supported
+    or most recent one stays, the others leave items and are listed in contradictions:
+    [{kept, dropped, reason}] (nothing is deleted). Pass include_dropped=true to keep them in items,
+    marked status "descartado por contradiccion" with kept_citation / hay memorias que se contradicen:
+    se conserva la mejor respaldada o mas reciente.
     Keywords: search everywhere, find across apps, when did I see that, busca en todo, cuándo vi eso, en qué app, screen and clipboard and audio.
     """
     return _post(
         "/api/agent/recall_search",
-        {"query": query, "since": since, "until": until, "sources": sources, "limit_per_source": limit_per_source},
+        {"query": query, "since": since, "until": until, "sources": sources, "limit_per_source": limit_per_source, "include_dropped": include_dropped},
     )
 
 

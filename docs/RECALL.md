@@ -61,6 +61,42 @@ Audio `session_id` and `start_s` for `scribe_transcript`. `recall` never
 invents a citation for an item it did not itself return: if a source is
 unavailable, its items are simply absent, not guessed.
 
+## Contradictions between memories
+
+When two memories talk about the same subject and cannot both be true,
+`recall` and `recall_search` resolve it instead of handing the assistant both
+versions (`funes_hoard/contradictions.py`, deterministic, no model, nothing is
+sent anywhere and nothing is deleted). The check runs on the merged items of
+the other sources (screen, clipboard, audio, Funes search hits); Funes
+foreground-window episodes are not claims and are skipped.
+
+Rules, in Spanish and English:
+
+| Rule | Example | Result |
+| --- | --- | --- |
+| `attr`: same subject, different typed value (time, weekday, date, amount with unit, version) | "La reunion con Marta es el martes" / "pasa al jueves" | different weekday |
+| `neg`: the same words affirmed and denied | "Vamos a Lisboa" / "Ya no vamos a Lisboa"; "I like coffee" / "I don't like coffee" | one states, the other denies |
+| `opp`: the same words with opposite state words | "servidor activo" / "inactivo"; "confirmed" / "cancelled" | opposite states |
+
+Compatible facts are left alone: untyped values ("Ana es ingeniera" /
+"Ana es madre"), overlapping value sets ("at 9:00 and 11:00" / "at 9:00"),
+different subjects, and a negation of a different value ("no es el martes" /
+"es el jueves").
+
+Which one stays: the version backed by more distinct items wins; on a tie the
+most recent wins. The others leave `items` and are reported in
+`contradictions: [{kept, dropped, reason, reason_en, rule}]`, where `kept` and
+`dropped` are `{citation, time, source, text}`. With `include_dropped=true`
+(MCP/agent tools and `óinclude_dropped=true` on the REST routes) the dropped
+items stay in `items`, marked `status: "descartado por contradicción"`, with
+`discard_reason` and `kept_citation` pointing to the one that was kept.
+`summary.dropped_by_contradiction` counts them. The Recall view shows a note
+with the resolved contradictions and a checkbox to show the discarded ones.
+
+Limits: it works on sentences it can parse (no pronouns or long-range
+context), the subject match is by normalised words, dates are compared as
+day-month, and there is no model-based check (Funes does not use a model for
+recall, so none was added).
 ## Adding a source
 
 A new federated source needs, in `funes_hoard/sources.py`:

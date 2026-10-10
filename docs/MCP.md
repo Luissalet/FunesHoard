@@ -210,7 +210,7 @@ resumes by itself when the pause ends.
  "note": "recording paused for 30 min; it resumes by itself"}
 ```
 
-### recall(at=None, window_minutes=15, sources=None, limit_per_source=20)
+### recall(at=None, window_minutes=15, sources=None, limit_per_source=20, include_dropped=False)
 
 **Call this first for "what was I doing / qué hacía / qué pasó a las X".**
 Merges Funes's own episodes with the other local Hoard apps -- Argus
@@ -240,7 +240,7 @@ citation format and how to add a source.
              "unavailable": []}}
 ```
 
-### recall_search(query, since=None, until=None, sources=None, limit_per_source=20)
+### recall_search(query, since=None, until=None, sources=None, limit_per_source=20, include_dropped=False)
 
 The same merge as `recall`, but a text search across a range (default: the
 last 7 days) instead of a moment. `since`/`until` accept the same day words
@@ -254,6 +254,11 @@ a time instead of a topic.
             "ref": {"id": 3, "app": "chrome"}}],
  "summary": {"counts": {"funes": 0, "argus": 1, "echo": 0, "scribe": 0}, "total": 1, "unavailable": []}}
 ```
+
+Both tools also report `contradictions: [{kept, dropped, reason}]`: memories that cannot both be true
+(different time/value for the same subject, one stating and another denying, opposite states) are resolved
+by support, then recency; the loser leaves `items` unless `include_dropped=true`, in which case it stays marked
+`status: "descartado por contradicción"` with `kept_citation` (see [RECALL.md](RECALL.md#contradictions-between-memories)).
 
 ### sources_status()
 

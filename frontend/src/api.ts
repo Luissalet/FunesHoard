@@ -188,6 +188,17 @@ export interface RecallItem {
   text: string;
   citation: string;
   ref: Record<string, unknown>;
+  status?: string;
+  discard_reason?: string;
+  kept_citation?: string;
+}
+
+export interface RecallContradiction {
+  kept: { citation: string; time: string | null; source: string; text: string };
+  dropped: { citation: string; time: string | null; source: string; text: string };
+  rule: string;
+  reason: string;
+  reason_en: string;
 }
 
 export interface RecallUnavailable {
@@ -205,7 +216,8 @@ export interface RecallResponse {
   since?: string;
   until?: string;
   items: RecallItem[];
-  summary: { counts: Record<string, number>; total: number; unavailable: RecallUnavailable[] };
+  contradictions?: RecallContradiction[];
+  summary: { counts: Record<string, number>; total: number; unavailable: RecallUnavailable[]; dropped_by_contradiction?: number };
 }
 
 export interface SourceItem {
@@ -329,9 +341,9 @@ export const api = {
   meetingsAwaySetting: () => req<{ minutes: number }>("GET", "/api/settings/meetings-away"),
   setMeetingsAwaySetting: (minutes: number) => req<{ minutes: number }>("PUT", "/api/settings/meetings-away", { minutes }),
 
-  recall: (params: { at?: string; window?: number; sources?: string; limit_per_source?: number }) =>
+  recall: (params: { at?: string; window?: number; sources?: string; limit_per_source?: number; include_dropped?: string }) =>
     req<RecallResponse>("GET", `/api/recall${qs(params)}`),
-  recallSearch: (query: string, params: { since?: string; until?: string; sources?: string; limit_per_source?: number }) =>
+  recallSearch: (query: string, params: { since?: string; until?: string; sources?: string; limit_per_source?: number; include_dropped?: string }) =>
     req<RecallResponse>("GET", `/api/recall/search${qs({ query, ...params })}`),
   sources: () => req<{ items: SourceItem[] }>("GET", "/api/sources"),
   updateSource: (id: string, patch: Partial<Pick<SourceItem, "base_url" | "enabled" | "name" | "token_path">>) =>
