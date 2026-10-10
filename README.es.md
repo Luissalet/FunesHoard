@@ -355,3 +355,7 @@ El diario también muestra una pista **Agentes**, accesible por MCP con
 y recibos explícitos de turnos de Faustus, con procedencia y cobertura. Aparece
 aunque no haya actividad de pantalla y no deduce horas de trabajo. La emisión
 de recibos de Faustus sigue pendiente. Véanse los [límites de las fuentes](docs/AGENT-DIARY.md).
+
+Con `--demo` no se consultan los archivos recientes de Windows; la lista
+conserva sus ejemplos sintéticos. Usa una carpeta de datos aparte para no
+mezclar actividad ya guardada con la demostración. Véase [el modo demo](docs/DEMO.md).

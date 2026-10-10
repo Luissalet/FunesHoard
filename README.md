@@ -340,3 +340,7 @@ The day view also has an **Agents** lane, available through the read-only
 and explicit Faustus turn receipts with source and coverage. It stays visible
 without desktop activity and does not infer agent working hours. The Faustus
 receipt producer is still pending. See [source limits](docs/AGENT-DIARY.md).
+
+With `--demo`, Windows Recent Items are not polled; the file list retains
+its synthetic examples. Use a separate data directory to keep existing
+activity out of a demonstration. See [demo behaviour](docs/DEMO.md).

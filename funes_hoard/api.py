@@ -304,7 +304,7 @@ def create_app(
     probe = _pick_probe(demo)
     collector = Collector(db, probe, interval_s=float(db.get_meta("sample_interval_s", "1") or 1))
 
-    recent_poller = RecentFilesPoller(db, windows_recent_dir() if sys.platform == "win32" else None)
+    recent_poller = RecentFilesPoller(db, windows_recent_dir() if not demo and sys.platform == "win32" else None)
     git_poller = GitCommitsPoller(db)
     jobs = JobManager()
     scheduler = BackgroundScheduler(db=db, collector=collector, recent_poller=recent_poller, git_poller=git_poller)
