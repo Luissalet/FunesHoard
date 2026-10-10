@@ -9,6 +9,12 @@ from funes_hoard.sources import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_source_registry_defaults(monkeypatch):
+    """Keep registry contract tests independent of suite-wide source isolation."""
+    monkeypatch.delenv("FUNES_SOURCES", raising=False)
+
+
 def test_default_sources_have_the_well_known_ids_and_ports():
     ids = {s.id: s for s in default_sources()}
     assert ids["argus"].base_url == "http://127.0.0.1:5183"

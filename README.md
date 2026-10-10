@@ -345,3 +345,13 @@ Hub appear, with no reconstruction of older turns. See [source limits](docs/AGEN
 With `--demo`, Windows Recent Items are not polled; the file list retains
 its synthetic examples. Use a separate data directory to keep existing
 activity out of a demonstration. See [demo behaviour](docs/DEMO.md).
+
+Speech-to-text status waits for the job's completion signal instead of polling
+at 250 ms intervals. `wait_s` still caps the caller's wait, and jobs retain
+the same result, error, cancellation and retention behaviour. A failed engine
+factory now completes the job as an error rather than leaving it running.
+The offline test suite uses isolated demo copies and fake Link clients for
+routes that do not exercise a backend; dedicated HTTP/MCP protocol tests keep
+their real local transports. On the recorded Windows run, 466 tests passed
+in 75.03 s (the repository target is under 90 s). This is test timing, not a
+speech-model throughput measurement.

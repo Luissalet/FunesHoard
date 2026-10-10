@@ -20,6 +20,11 @@ from tests.fakes import FakeLink
 def test_embedded_audio_status_and_agent_tools(tmp_path, monkeypatch):
     monkeypatch.setenv("SCRIBE_AUDIO", "none")
     monkeypatch.setenv("SCRIBE_TRANSCRIBER", "fake")
+    monkeypatch.setenv("FUNES_SOURCES", json.dumps([
+        {"id": "argus", "enabled": False},
+        {"id": "echo", "enabled": False},
+        {"id": "scribe", "base_url": "http://127.0.0.1:18877/audio"},
+    ]))
     app = create_app(tmp_path, None, demo=True, port=18877, link_factory=FakeLink)
     with TestClient(app, base_url="http://127.0.0.1:18877") as client:
         client.headers.update(agent_headers())

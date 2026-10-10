@@ -3,11 +3,12 @@ from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
+from tests.fakes import FakeLink
 
 
 @pytest.fixture()
 def client(demo_data_dir):
-    app = create_app(demo_data_dir, None, demo=True, port=18831)
+    app = create_app(demo_data_dir, None, demo=True, port=18831, link_factory=FakeLink)
     with TestClient(app, base_url="http://127.0.0.1:18831") as c:
         c.headers.update(agent_headers())
         yield c
@@ -323,7 +324,7 @@ def test_ui_recent_commits(client):
 
 
 def test_demo_flag_seeds_an_empty_data_dir(tmp_path):
-    app = create_app(tmp_path / "fresh", None, demo=True, port=18831)
+    app = create_app(tmp_path / "fresh", None, demo=True, port=18831, link_factory=FakeLink)
     with TestClient(app, base_url="http://127.0.0.1:18831") as c:
         assert c.get("/api/health").json()["spans"] > 20
 

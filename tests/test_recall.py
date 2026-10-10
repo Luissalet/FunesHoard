@@ -34,7 +34,9 @@ def db(tmp_path):
 
 
 @pytest.fixture()
-def registry(tmp_path):
+def registry(tmp_path, monkeypatch):
+    # These direct recall tests provide their own MockTransport clients.
+    monkeypatch.delenv("FUNES_SOURCES", raising=False)
     reg = SourceRegistry(tmp_path / "data")
     token_dir = tmp_path / "tokens"
     token_dir.mkdir()
@@ -211,7 +213,12 @@ def _run(coro):
 
 # ------------------------------------------------------------- REST/API --
 @pytest.fixture()
-def api_client(demo_data_dir):
+def api_client(demo_data_dir, monkeypatch):
+    # API tests must not call sibling applications running on the developer's machine.
+    monkeypatch.setenv("FUNES_SOURCES", json.dumps([
+        {"id": source_id, "base_url": "http://funes-test.invalid", "enabled": False}
+        for source_id in ("argus", "echo", "scribe")
+    ]))
     app = create_app(demo_data_dir, None, demo=True, port=18844)
     with TestClient(app, base_url="http://127.0.0.1:18844") as c:
         c.headers.update(agent_headers())
@@ -219,13 +226,30 @@ def api_client(demo_data_dir):
 
 
 def test_api_recall_endpoint_never_fails_when_sources_are_down(api_client, monkeypatch):
-    # Closed ports, whatever is running on the developer's machine.
-    monkeypatch.setenv("FUNES_SOURCES", json.dumps([{"id": i, "base_url": "http://127.0.0.1:1"} for i in ("argus", "echo", "scribe")]))
+    # Exercise the API route with a hermetic transport that reports real HTTPX connection failures.
+    from funes_hoard import recall as recall_module
+
+    real_async_client = httpx.AsyncClient
+    requests = []
+
+    def connection_error(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.host)
+        raise httpx.ConnectError("refused", request=request)
+
+    monkeypatch.setenv("FUNES_SOURCES", json.dumps([
+        {"id": source_id, "base_url": "http://funes-test.invalid", "enabled": True}
+        for source_id in ("argus", "echo", "scribe")
+    ]))
+    monkeypatch.setattr(
+        recall_module.httpx, "AsyncClient",
+        lambda *args, **kwargs: real_async_client(*args, transport=httpx.MockTransport(connection_error), **kwargs),
+    )
     r = api_client.get("/api/recall", params={"window": 30})
     assert r.status_code == 200
     body = r.json()
     assert "items" in body and "summary" in body
-    assert body["summary"]["unavailable"]  # nothing is really running on those ports
+    assert {item["id"] for item in body["summary"]["unavailable"]} == {"argus", "echo", "scribe"}
+    assert sorted(requests) == ["funes-test.invalid"] * 3
 
 
 def test_api_recall_search_endpoint(api_client):

@@ -22,10 +22,10 @@ PORT = 18851
 
 
 @pytest.fixture()
-def api(tmp_path, monkeypatch):
+def api(tmp_path, demo_data_dir, monkeypatch):
     monkeypatch.setenv("SCRIBE_AUDIO", "none")
     monkeypatch.setenv("SCRIBE_TRANSCRIBER", "fake")
-    app = create_app(tmp_path / "data", None, demo=True, port=PORT, link_factory=FakeLink)
+    app = create_app(demo_data_dir, None, demo=True, port=PORT, link_factory=FakeLink)
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
         client.headers.update(agent_headers())
         yield client, app.state.audio_app.state.services, tmp_path
@@ -101,6 +101,7 @@ def test_a_queued_job_can_be_cancelled_and_never_runs(api):
     time.sleep(0.2)
     job = call(client, "transcribe_file", path=str(wav(tmp))).json()
     assert job["status"] == "queued"
+    assert svc.stt.status(job["job_id"], wait_s=0.01)["status"] == "queued"
     assert call(client, "transcribe_cancel", job_id=job["job_id"]).json() == {"job_id": job["job_id"], "status": "cancelled"}
     assert call(client, "transcribe_cancel", job_id=job["job_id"]).json()["status"] == "cancelled"
     gate.set()
@@ -184,11 +185,11 @@ def test_a_running_job_is_cancelled_through_the_shared_engine(tmp_path):
     try:
         job = jobs.submit(str(wav(tmp_path)))
         assert BlockingModel.started.wait(10)
-        assert jobs.status(job["job_id"])["status"] == "running"
+        assert jobs.status(job["job_id"], wait_s=0.02)["status"] == "running"
         assert jobs.cancel(job["job_id"]) == {"job_id": job["job_id"], "status": "cancelled"}
         BlockingModel.release.set()
         assert worker.wait_idle(10)
-        assert jobs.status(job["job_id"])["status"] == "cancelled"
+        assert jobs.status(job["job_id"], wait_s=1)["status"] == "cancelled"
     finally:
         BlockingModel.release.set()
         worker.stop()
@@ -205,5 +206,20 @@ def test_a_failing_model_ends_in_error_with_the_message(tmp_path):
     try:
         job = jobs.submit(str(wav(tmp_path)), wait_s=10)
         assert job["status"] == "error" and "corrupt" in job["error"]
+    finally:
+        worker.stop()
+
+
+def test_an_engine_factory_failure_completes_the_waiting_job(tmp_path):
+    def broken_engine():
+        raise RuntimeError("engine initialization failed")
+
+    worker = TranscriptionWorker()
+    worker.start()
+    jobs = SttJobs(worker, broken_engine, broken_engine, lambda: True)
+    try:
+        job = jobs.submit(str(wav(tmp_path)), wait_s=2)
+        assert job["status"] == "error"
+        assert "engine initialization failed" in job["error"]
     finally:
         worker.stop()

@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from funes_hoard.hoard_link.media import stt
 from funes_hoard.hoard_link.proc import Cancelled
-from funes_hoard.hoard_link.waiting import DONE_STATES, wait_for
+from funes_hoard.hoard_link.waiting import DONE_STATES, clamp_wait
 
 from .importer import ALLOWED_EXT, MAX_UPLOAD_BYTES
 from .worker import PRIORITY_FINAL, TranscriptionWorker
@@ -49,6 +49,7 @@ class SttJob:
     error: str = ""
     finished_at: float = 0.0
     cancel: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
 
 
 def check_audio_path(path: str) -> Path:
@@ -98,13 +99,16 @@ class SttJobs:
     def status(self, job_id: str, wait_s: float = 0.0) -> dict[str, Any]:
         with self._lock:
             self._prune()
-            if job_id not in self._jobs:
+            job = self._jobs.get(job_id)
+            if job is None:
                 raise LookupError(f"no such job: {job_id}")
-        view = wait_for(lambda: self._view(job_id), wait_s)
-        if view.get("state") == "missing":
+            should_wait = job.status not in DONE_STATES
+        wait = clamp_wait(wait_s)
+        if wait and should_wait:
+            job.finished.wait(wait)
+        view = self._view(job_id)
+        if view is None:
             raise LookupError(f"no such job: {job_id}")
-        view.pop("waited_s", None)
-        view.pop("still_running", None)
         return view
 
     def cancel(self, job_id: str) -> dict[str, Any]:
@@ -135,6 +139,7 @@ class SttJobs:
 
     def _finish(self, job: SttJob, status: str, *, result: dict[str, Any] | None = None, error: str = "") -> None:
         job.status, job.result, job.error, job.finished_at = status, result, error, self.clock()
+        job.finished.set()
 
     def _prune(self) -> None:
         now = self.clock()
@@ -155,9 +160,10 @@ class SttJobs:
         def progress(fraction: float) -> None:
             job.progress = max(job.progress, min(0.99, float(fraction)))
 
-        engine = self._engine_for(job.model) if job.model else self._engine()
         own = bool(job.model)
+        engine: stt.Transcriber | None = None
         try:
+            engine = self._engine_for(job.model) if job.model else self._engine()
             result = engine.transcribe(job.path, language=None if job.language == "auto" else job.language, word_timestamps=job.word_timestamps,
                                        vad=job.vad, initial_prompt=job.initial_prompt, progress=progress, cancel=job.cancel)
             with self._lock:
@@ -170,5 +176,5 @@ class SttJobs:
             with self._lock:
                 self._finish(job, "error", error=str(error)[:500])
         finally:
-            if own:
+            if own and engine is not None:
                 engine.close()

@@ -381,3 +381,12 @@ with a 4xx status, and the adapter raises them as `ToolError("<code>: <message>"
 
 The app itself must be running (`Iniciar Funes's Hoard.cmd`); the adapter
 holds no data of its own.
+
+The transcription service wakes a `transcribe_status`/`transcribe_file` waiter
+when the job finishes; it no longer adds a fixed polling interval to an
+already completed job. The same `wait_s` limit (150 seconds), terminal states,
+cancellation and retained-job limits apply. A transcriber factory failure is
+reported as a completed error. The MCP adapter still calls the running app:
+for an isolated instance, set `FUNES_DATA_DIR` as well as `FUNES_URL`, or set
+both `FUNES_TOKEN_FILE` and `FUNES_AUDIO_TOKEN_FILE` explicitly, because the
+embedded audio service has its own token under `<data>/audio/mcp-token`.

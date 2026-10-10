@@ -6,6 +6,7 @@ from tests.conftest import agent_headers
 from fastapi.testclient import TestClient
 
 from funes_hoard.api import create_app
+from tests.fakes import FakeLink
 
 PORT = 18832
 
@@ -18,7 +19,7 @@ def static_client(tmp_path, demo_data_dir):
     (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
     secret = tmp_path / "secret.txt"
     secret.write_text("TOP-SECRET", encoding="utf-8")
-    app = create_app(demo_data_dir, dist, demo=True, port=PORT)
+    app = create_app(demo_data_dir, dist, demo=True, port=PORT, link_factory=FakeLink)
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
         yield c, secret
 
@@ -53,7 +54,7 @@ def test_unknown_api_path_is_json_404_not_the_spa(static_client):
 
 @pytest.fixture()
 def client(demo_data_dir):
-    app = create_app(demo_data_dir, None, demo=True, port=PORT)
+    app = create_app(demo_data_dir, None, demo=True, port=PORT, link_factory=FakeLink)
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as c:
         c.headers.update(agent_headers())
         yield c

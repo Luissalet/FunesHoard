@@ -32,7 +32,7 @@ MINUTES = {
 
 
 @pytest.fixture()
-def booted(tmp_path, monkeypatch):
+def booted(tmp_path, demo_data_dir, monkeypatch):
     monkeypatch.setenv("SCRIBE_AUDIO", "none")
     monkeypatch.setenv("SCRIBE_TRANSCRIBER", "fake")
     monkeypatch.setenv("HOARD_HUB_URL", "http://127.0.0.1:1")
@@ -40,7 +40,7 @@ def booted(tmp_path, monkeypatch):
     real_emit = family.emit
     monkeypatch.setattr(family, "emit", lambda kind, data=None, **kw: sent.append((kind, data or {})) or True)
     link = ScriptedLink([MINUTES])
-    app = create_app(tmp_path / "data", None, demo=True, port=18861, link=link)
+    app = create_app(demo_data_dir, None, demo=True, port=18861, link=link)
     with TestClient(app, base_url="http://127.0.0.1:18861") as client:
         client.headers.update(agent_headers())
         audio = app.state.audio_app.state.services

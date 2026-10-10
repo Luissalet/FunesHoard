@@ -164,7 +164,10 @@ def _fake_funes_items(*_a, **_k):
 
 
 def test_rest_and_agent_surfaces(api_client, monkeypatch):
-    monkeypatch.setenv("FUNES_SOURCES", json.dumps([{"id": i, "base_url": "http://127.0.0.1:1"} for i in ("argus", "echo", "scribe")]))
+    monkeypatch.setenv("FUNES_SOURCES", json.dumps([
+        {"id": source_id, "base_url": "http://funes-test.invalid", "enabled": False}
+        for source_id in ("argus", "echo", "scribe")
+    ]))
     monkeypatch.setattr(recall_mod, "_funes_search_items", _fake_funes_items)
     from tests.conftest import agent_headers
 

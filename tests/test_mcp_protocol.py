@@ -28,10 +28,13 @@ def _free_port() -> int:
 
 @pytest.fixture()
 def live_app(demo_data_dir, monkeypatch):
-    # Hermetic: on the developer's machine the sibling apps ARE running (and
-    # their token files exist), so point the federated sources at a closed port.
+    # Hermetic: on the developer's machine the sibling apps ARE running, so
+    # disable federated sources for this real stdio/API protocol test.
     import json as _json
-    monkeypatch.setenv("FUNES_SOURCES", _json.dumps([{"id": i, "base_url": "http://127.0.0.1:1"} for i in ("argus", "echo", "scribe")]))
+    monkeypatch.setenv("FUNES_SOURCES", _json.dumps([
+        {"id": source_id, "base_url": "http://funes-test.invalid", "enabled": False}
+        for source_id in ("argus", "echo", "scribe")
+    ]))
     monkeypatch.setenv("HOARD_HUB_URL", "http://127.0.0.1:1")  # and no hub proxy to fall back to
     port = _free_port()
     app = create_app(demo_data_dir, None, demo=True, port=port)
