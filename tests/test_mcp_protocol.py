@@ -75,7 +75,7 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
                 "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline",
                 "activity_summary", "activity_search", "activity_recent_files",
                 "activity_projects", "activity_pause",
-                "recall", "recall_search", "sources_status",
+                "recall", "recall_search", "sources_status", "activity_agents_day",
             } | {"scribe_status", "scribe_sessions", "scribe_transcript", "scribe_search",
                  "scribe_start", "scribe_stop", "scribe_note", "scribe_tag", "scribe_export", "scribe_delete",
                  "scribe_minutes", "minutes_get", "scribe_import_file", "transcribe_file", "transcribe_status", "transcribe_cancel"}
@@ -107,6 +107,12 @@ async def test_mcp_adapter_lists_and_calls_tools_over_stdio(live_app, demo_data_
             assert project_result.isError is not True
             project_payload = json.loads(project_result.content[0].text)
             assert project_payload["found"] and project_payload["recent_windows"]
+
+            agent_events = await session.call_tool('activity_agents_day', {'day': 'yesterday', 'limit': 2})
+            assert agent_events.isError is not True
+            agent_payload = json.loads(agent_events.content[0].text)
+            assert 'T' in agent_payload['start'] and 'sources' in agent_payload
+            assert agent_payload['sources']['git']['ok'] is True
 
             for tool in tools.tools:
                 assert tool.description, tool.name

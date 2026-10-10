@@ -349,3 +349,9 @@ encontró cada punto.
 ## Licencia
 
 MIT; consulta [LICENSE](LICENSE).
+
+El diario también muestra una pista **Agentes**, accesible por MCP con
+`activity_agents_day`: commits locales, tareas actualmente cerradas del Ágora
+y recibos explícitos de turnos de Faustus, con procedencia y cobertura. Aparece
+aunque no haya actividad de pantalla y no deduce horas de trabajo. La emisión
+de recibos de Faustus sigue pendiente. Véanse los [límites de las fuentes](docs/AGENT-DIARY.md).

@@ -334,3 +334,9 @@ MIT - see [LICENSE](LICENSE).
 File transcription is a stateless family service: callers receive text and timed segments without creating recording sessions. The shared Whisper engine uses CPU for subsequent automatic-device jobs after detecting missing CUDA libraries.
 
 The vendored copy is maintained by HoardLink’s sync script. Windows validation and the family service contract are documented in HoardLink’s `docs/commons/windows-validation.md` and `docs/commons/services.md`.
+
+The day view also has an **Agents** lane, available through the read-only
+`activity_agents_day` MCP tool: local commits, currently closed Agora tasks
+and explicit Faustus turn receipts with source and coverage. It stays visible
+without desktop activity and does not infer agent working hours. The Faustus
+receipt producer is still pending. See [source limits](docs/AGENT-DIARY.md).

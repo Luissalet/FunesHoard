@@ -160,6 +160,21 @@ def activity_now() -> dict:
 
 
 @mcp.tool(annotations=_READ)
+def activity_agents_day(day: Optional[str] = None, limit: int = 50, offset: int = 0, kind: Optional[str] = None) -> dict:
+    """Recorded agent events in a day: Faustus turns, closed Agora tasks and commits.
+
+    Read-only. day accepts yesterday/ayer or a date. kind is turn, task or commit,
+    omitted for all. Sources and timestamps stay explicit; a Git author is not
+    an agent identity and events are not inferred hours of work. Check truncated,
+    sources and has_more before claiming complete coverage; use next_offset to
+    continue. The Hub's retention window and task limit can leave older days partial.
+    Keywords: agent activity, what did agents do yesterday, closed tasks, commits,
+    actividad de agentes, qué hicieron los agentes ayer, tareas cerradas, diario.
+    """
+    return _post('/api/agent/activity_agents_day', {'day': day, 'limit': limit, 'offset': offset, 'kind': kind})
+
+
+@mcp.tool(annotations=_READ)
 def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_categories: bool = False) -> dict:
     """Where was I: the last things worked on before a moment, to resume. Por dónde iba, retomar.
 

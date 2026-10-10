@@ -86,18 +86,18 @@ def test_guard_rejects_null_origin_on_write(client):
     assert r.status_code == 403
 
 
-def test_agent_surface_is_exactly_the_twelve_tools_plus_six_audio_tools(client):
+def test_agent_surface_is_exactly_the_thirteen_tools_plus_six_audio_tools(client):
     agent_paths = sorted(
         {getattr(r, "path", "") for r in client.app.routes if getattr(r, "path", "").startswith("/api/agent/")}
     )
-    # The twelve activity tools, the audio tools other Hoards need through the hub
+    # The thirteen activity tools, the audio tools other Hoards need through the hub
     # (meeting minutes, import-by-path and the speech-to-text service: no start, stop or delete), plus the two routes of
     # the shared family contract (the catalogue and the token-guarded dispatcher over them).
     assert agent_paths == sorted(
         [f"/api/agent/{t}" for t in (
             "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline", "activity_summary",
             "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
-            "recall", "recall_search", "sources_status", "scribe_minutes", "minutes_get", "scribe_import_file",
+            "recall", "recall_search", "sources_status", "activity_agents_day", "scribe_minutes", "minutes_get", "scribe_import_file",
             "transcribe_file", "transcribe_status", "transcribe_cancel",
         )] + ["/api/agent/tools", "/api/agent/call"]
     )
@@ -106,7 +106,7 @@ def test_agent_surface_is_exactly_the_twelve_tools_plus_six_audio_tools(client):
 def test_shared_contract_dispatches_the_same_tools(client, tmp_path):
     cat = client.get("/api/agent/tools").json()
     names = {t["name"] for t in cat["tools"]}
-    assert "recall" in names and "activity_now" in names and len(names) == 18
+    assert {"recall", "activity_now", "activity_agents_day"} <= names and len(names) == 19
     assert {"scribe_minutes", "minutes_get", "scribe_import_file", "transcribe_file", "transcribe_status", "transcribe_cancel"} <= names and not any(n in names for n in ("scribe_delete", "scribe_start", "scribe_stop"))
     assert client.post("/api/agent/call", json={"name": "activity_now", "arguments": {}}, headers={"Authorization": ""}).status_code == 401
     from funes_hoard.hoard_link import family

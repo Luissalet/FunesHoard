@@ -2,6 +2,13 @@ export type Lang = "en" | "es";
 
 export const STRINGS = {
   en: {
+    agents_day: 'Agents', agents_intro: 'Recorded turns, closed tasks and commits, with their source.',
+    agents_refresh: 'Refresh', agents_filter: 'Event type', agents_all: 'All', agents_turns: 'Turns', agents_tasks: 'Tasks',
+    agents_unavailable: 'could not read this source; other records are shown.', agents_retained: 'The bus record starts on',
+    agents_partial: 'Only part of the source could be read.', agents_loading: 'Reading agent activity…',
+    agents_empty: 'No events registered for this selection.', agents_events: 'Agent events in time order',
+    agents_turn_title: 'Faustus turn recorded', agents_more: 'Show more',
+    agents_finished: 'Finished', agents_failed: 'Failed', agents_cancelled: 'Cancelled',
     appName: "Funes's Hoard",
     tagline: "your computer's episodic memory",
     nav_today: "Today",
@@ -189,6 +196,13 @@ export const STRINGS = {
     sources_status_down: "Unreachable",
   },
   es: {
+    agents_day: 'Agentes', agents_intro: 'Turnos registrados, tareas cerradas y commits, con su procedencia.',
+    agents_refresh: 'Actualizar', agents_filter: 'Tipo de evento', agents_all: 'Todos', agents_turns: 'Turnos', agents_tasks: 'Tareas',
+    agents_unavailable: 'no se pudo leer esta fuente; se muestran los demás registros.', agents_retained: 'El registro del bus empieza el',
+    agents_partial: 'Solo se ha podido leer parte de esta fuente.', agents_loading: 'Leyendo actividad de agentes…',
+    agents_empty: 'No hay eventos registrados para esta selección.', agents_events: 'Eventos de agentes por hora',
+    agents_turn_title: 'Turno de Faustus registrado', agents_more: 'Mostrar más',
+    agents_finished: 'Finalizado', agents_failed: 'Fallido', agents_cancelled: 'Cancelado',
     appName: "Funes's Hoard",
     tagline: "la memoria episódica de tu ordenador",
     nav_today: "Hoy",

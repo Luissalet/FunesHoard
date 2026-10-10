@@ -10,9 +10,10 @@ behaviour below is defined in `funes_hoard/queries.py` and `funes_hoard/api.py`.
 ## Contract
 
 - **Read-only except `activity_pause`.** The agent surface is exactly the
-  twelve routes below (a test enumerates the app's routes), plus two audio
-  routes that other apps reach through the Hoard Link hub: `scribe_minutes`
-  and `scribe_import_file` (documented at the end of this file). The pause can
+  thirteen activity routes below (a test enumerates the app's routes), plus
+  six audio routes: `scribe_minutes`, `minutes_get`, `scribe_import_file`,
+  `transcribe_file`, `transcribe_status`, and `transcribe_cancel`
+  (documented at the end of this file). The pause can
   only *extend* a pause: it cannot resume recording, shorten a pause the
   human set, or turn "pause until resumed" into a timed pause. Rules,
   deletion, retention and export exist only in the UI.
@@ -48,6 +49,18 @@ behaviour below is defined in `funes_hoard/queries.py` and `funes_hoard/api.py`.
   are the SQLite row ids: stable for the life of the row.
 
 ## Tools
+
+### activity_agents_day(day=None, limit=50, offset=0, kind=None)
+
+Recorded agent turns, currently closed Agora tasks and local Git commits in
+one day. `kind` selects `turn`, `task` or `commit`; omit it for all. The
+response includes source identities, `totals`, `has_more`, `next_offset`
+and per-source coverage in `sources`. Missing sources preserve the others;
+`truncated` also indicates unavailable or partial source coverage.
+These are point events, not working durations or independent success proof.
+Git authors are not assigned an agent identity. The Hub retains only a
+window of events and at most 500 currently closed tasks. The Faustus receipt
+producer is still pending; see [the source contract](AGENT-DIARY.md).
 
 ### activity_now()
 

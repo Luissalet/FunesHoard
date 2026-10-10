@@ -13,6 +13,13 @@ from funes_hoard.db import Database
 from funes_hoard.demo import seed_demo_data
 
 
+@pytest.fixture(autouse=True)
+def isolated_hub(monkeypatch):
+    """Tests never discover or start the user's shared Hub."""
+    monkeypatch.setenv("HOARD_HUB_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("HOARD_HUB_AUTOSTART", "0")
+
+
 @pytest.fixture(scope="session")
 def _demo_template(tmp_path_factory):
     path = tmp_path_factory.mktemp("demo-template")

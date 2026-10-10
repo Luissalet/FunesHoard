@@ -16,9 +16,9 @@ import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -44,6 +44,7 @@ from funes_hoard.retention import delete_range, run_retention
 from funes_hoard.scheduler import BackgroundScheduler
 from funes_hoard.sources import SourceRegistry
 from funes_hoard.timeparse import parse_day_or_range
+from funes_hoard.agent_activity import agent_day
 
 _NOW_WORDS = {"", "now", "right now", "ahora", "ahora mismo", "en este momento", "actual", "current"}
 
@@ -123,6 +124,13 @@ class TimelineArgs(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
     around: Optional[str] = None
+
+
+class AgentDayArgs(BaseModel):
+    day: Optional[str] = None
+    limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=10000)
+    kind: Optional[Literal['turn', 'task', 'commit']] = None
 
 
 class SummaryArgs(BaseModel):
@@ -244,7 +252,7 @@ class SourcePatchIn(BaseModel):
 AGENT_TOOLS = (
     "activity_now", "activity_where_was_i", "activity_project_resume", "activity_timeline", "activity_summary",
     "activity_search", "activity_recent_files", "activity_projects", "activity_pause",
-    "recall", "recall_search", "sources_status",
+    "recall", "recall_search", "sources_status", "activity_agents_day",
 )
 PRIVACY_MATCH_TYPES = ("app", "title_regex")
 CLASSIFY_MATCH_TYPES = ("app", "title_regex", "domain")
@@ -451,6 +459,11 @@ def create_app(
     def agent_activity_now():
         return run_agent("activity_now", "(no arguments)", lambda: queries.activity_now(db, collector))
 
+    @app.post('/api/agent/activity_agents_day')
+    async def agent_agents_day(args: AgentDayArgs):
+        return await run_agent_async('activity_agents_day', _args(day=args.day, limit=args.limit, offset=args.offset, kind=args.kind),
+                                     agent_day(db, args.day, limit=args.limit, offset=args.offset, kind=args.kind))
+
     @app.post("/api/agent/activity_where_was_i")
     def agent_where_was_i(args: WhereWasIArgs):
         return run_agent(
@@ -612,6 +625,10 @@ def create_app(
     @app.get("/api/summary")
     def ui_summary(day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, group_by: str = "all"):
         return queries.activity_summary(db, day, start, end, group_by)
+
+    @app.get('/api/agents/day')
+    async def ui_agents_day(day: Optional[str] = None, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000), kind: Optional[str] = None):
+        return await agent_day(db, day, limit=limit, offset=offset, kind=kind)
 
     @app.get("/api/search")
     def ui_search(query: str, since: Optional[str] = None, until: Optional[str] = None, limit: int = 30):
@@ -1071,5 +1088,6 @@ def create_app(
     # so the two catalogues never disagree.
     family.install_fastapi(app, "funes", str(data_dir),
                            mcp_source=str(Path(__file__).with_name("mcp_server.py")))
+    backend.mark_read_only_agent_tools(app, {'activity_agents_day'})
 
     return app

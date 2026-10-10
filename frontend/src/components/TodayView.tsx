@@ -16,6 +16,7 @@ import {
 import { categoryColor } from "../categoryColors";
 import { categoryLabel, STRINGS, type Lang } from "../i18n";
 import { CategoryBarList, BarList, EmptyState } from "./Common";
+import { AgentLane } from './AgentLane';
 
 type Zoom = "active" | "day";
 
@@ -106,11 +107,13 @@ export function TodayView({
 
   const picker = <DayPicker day={day} onChange={setDay} lang={lang} />;
   const whereCard = <WhereWasICard day={day} isToday={isToday} lang={lang} onShow={onNavigate} />;
-  if (loading && !summary) return picker;
+  const agentLane = <AgentLane key={day} day={day} lang={lang} />;
+  if (loading && !summary) return <div>{picker}{agentLane}</div>;
   if (error) {
     return (
       <div>
         {picker}
+        {agentLane}
         <EmptyState title={t.load_error} body={error} />
       </div>
     );
@@ -119,6 +122,7 @@ export function TodayView({
     return (
       <div>
         {picker}
+        {agentLane}
         {whereCard}
         <EmptyState title={t.no_data_title} body={t.no_data_body} />
       </div>
@@ -128,6 +132,7 @@ export function TodayView({
   return (
     <div>
       {picker}
+      {agentLane}
 
       <div className="card" style={{ marginTop: 16 }} ref={timelineRef}>
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>

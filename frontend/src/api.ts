@@ -1,3 +1,14 @@
+export type AgentEventKind = 'turn' | 'task' | 'commit';
+export interface AgentEvent {
+  ref: string; ts: number; kind: AgentEventKind; source: string; source_id: string;
+  agent: string; title: string; status: string; repo: string; session_id?: string; author?: string;
+}
+export interface AgentDay {
+  start: number; end: number; day: string; items: AgentEvent[]; total: number;
+  totals: Record<AgentEventKind, number>; has_more: boolean; next_offset: number | null; truncated: boolean;
+  sources: Record<string, { ok: boolean; truncated: boolean; reason: string; since?: number | null }>;
+}
+
 export interface StatusInfo {
   recording: boolean;
   paused: boolean;
@@ -276,6 +287,8 @@ function qs(params: Record<string, string | number | undefined>): string {
 }
 
 export const api = {
+  agentsDay: (params: { day: string; limit?: number; offset?: number; kind?: AgentEventKind }) =>
+    req<AgentDay>('GET', `/api/agents/day${qs(params)}`),
   status: () => req<StatusInfo>("GET", "/api/status"),
   timeline: (params: { day?: string; start?: string; end?: string; min_minutes?: number; limit?: number; offset?: number }) =>
     req<TimelineResponse>("GET", `/api/timeline${qs(params)}`),
