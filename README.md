@@ -338,8 +338,9 @@ The vendored copy is maintained by HoardLink’s sync script. Windows validation
 The day view also has an **Agents** lane, available through the read-only
 `activity_agents_day` MCP tool: local commits, currently closed Agora tasks
 and explicit Faustus turn receipts with source and coverage. It stays visible
-without desktop activity and does not infer agent working hours. The Faustus
-receipt producer is still pending. See [source limits](docs/AGENT-DIARY.md).
+without desktop activity and does not infer agent working hours. Faustus's
+saved-turn receipt producer is integrated; only receipts actually sent to the
+Hub appear, with no reconstruction of older turns. See [source limits](docs/AGENT-DIARY.md).
 
 With `--demo`, Windows Recent Items are not polled; the file list retains
 its synthetic examples. Use a separate data directory to keep existing

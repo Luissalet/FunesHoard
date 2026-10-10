@@ -353,8 +353,9 @@ MIT; consulta [LICENSE](LICENSE).
 El diario también muestra una pista **Agentes**, accesible por MCP con
 `activity_agents_day`: commits locales, tareas actualmente cerradas del Ágora
 y recibos explícitos de turnos de Faustus, con procedencia y cobertura. Aparece
-aunque no haya actividad de pantalla y no deduce horas de trabajo. La emisión
-de recibos de Faustus sigue pendiente. Véanse los [límites de las fuentes](docs/AGENT-DIARY.md).
+aunque no haya actividad de pantalla y no deduce horas de trabajo. Faustus ya
+incluye el emisor de recibos de respuestas guardadas; solo aparecen los enviados
+realmente al Hub, sin reconstruir turnos anteriores. Véanse los [límites de las fuentes](docs/AGENT-DIARY.md).
 
 Con `--demo` no se consultan los archivos recientes de Windows; la lista
 conserva sus ejemplos sintéticos. Usa una carpeta de datos aparte para no

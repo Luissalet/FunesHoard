@@ -31,7 +31,10 @@ once. Its timestamp is the Hub receipt time. Prompt, response and arbitrary
 payload fields are omitted. Other bus events, including generic agent
 calls, are not evidence of a completed turn.
 
-The reader supports this receipt contract; Faustus production does not yet
-publish these receipts (Agora task #268 is in review). That producer is a separate dependency, so an empty
-Turns filter is not evidence that Faustus did no work. Integration of the
-cross-app contract follows the agreement in Agora discussion #282.
+Faustus's saved-turn producer (#268) is integrated as `40b207b7` and
+`0db473b5`. It emits after persisting a normal reply, including partial/error
+and cancelled outcomes, and never emits incognito turns. It omits prompt and
+reply text, free titles and credentials. The running Faustus process must use
+that source and reach the Hub; older turns are not reconstructed. An empty
+Turns filter is not evidence that Faustus did no work. The cross-app contract
+follows the agreement in Agora discussion #282.
