@@ -210,6 +210,11 @@ están la salida de cada herramienta, los códigos de error y un ejemplo de
 configuración, y en [docs/RECALL.md](docs/RECALL.md) se explican las
 herramientas `recall` combinadas y el formato de cita al completo.
 
+La descripción de cada herramienta ocupa menos de 750 caracteres (unos 250
+tokens), así que ofrecerlas todas cuesta poco al anfitrión; el detalle de cada
+argumento está en la descripción de su parámetro y `tests/test_tool_descriptions.py`
+lo vigila.
+
 ## Modelos compartidos (HoardLink)
 
 Las funciones que necesitan un modelo de lenguaje, "Escribe mi día" y las actas,

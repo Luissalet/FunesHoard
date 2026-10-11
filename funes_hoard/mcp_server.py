@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Funes's Hoard MCP adapter (stdio transport).
 
-Standalone script: imports only stdlib, httpx and mcp. It is launched by
+Standalone script: imports only stdlib, httpx and mcp (with its pydantic). It is launched by
 absolute path (not `python -m`), so it must not import anything from the
 `funes_hoard` package -- everything it needs comes over HTTP from the
 running app's `/api/agent/*` surface, which is the single source of truth
@@ -10,13 +10,14 @@ for these tools' behaviour (see `funes_hoard/api.py` and `queries.py`).
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 from urllib.parse import urlparse
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 # httpx logs every request at INFO on stderr; the host only needs real problems.
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -175,23 +176,15 @@ def activity_agents_day(day: Optional[str] = None, limit: int = 50, offset: int 
 
 
 @mcp.tool(annotations=_READ)
-def activity_where_was_i(before: Optional[str] = None, contexts: int = 5, all_categories: bool = False) -> dict:
+def activity_where_was_i(
+    before: Annotated[Optional[str], Field(description='Look back from this moment; default now. "ayer"/"yesterday" = end of yesterday, "-2h" = two hours ago, a weekday name ("martes", "last tuesday") = that whole day.')] = None,
+    contexts: Annotated[int, Field(description="Distinct contexts to return, 1-20.")] = 5,
+    all_categories: Annotated[bool, Field(description="Also include Media/Communication/Games (music player, chat app), skipped by default.")] = False,
+) -> dict:
     """Where was I: the last things worked on before a moment, to resume. Por dónde iba, retomar.
 
-    Resume context: the last distinct things the user worked on before a
-    moment, most recent first, a context with a known project ranked ahead
-    of a bare app name. Each context has its last window title (and up to 3
-    `recent_titles`: the editor title naming the file is often the one just
-    before a final terminal), time range (`human`), duration, up to 5 files
-    opened (the project's own first) and 5 commits made meanwhile. A title
-    naming a file shows it was in the foreground, not that it was edited;
-    no recorded commit does not imply uncommitted changes.
-    Away/locked time, alt-tab blips and (by default) Media/Communication/
-    Games are skipped -- pass `all_categories=true` to include the music
-    player or the chat app anyway. `before` defaults to now; "yesterday"/
-    "ayer" means the end of yesterday, "-2h" two hours ago, a weekday name
-    ("martes", "last tuesday") means that whole day. `contexts` 1-20.
-    Keywords: where was I, where did I leave off, resume, what was I working on, this morning, dónde estaba, donde lo dejé, en qué estaba trabajando, retomar, contexto, esta mañana.
+    Last distinct contexts, newest first (known projects ahead of bare apps), each with its last window titles, time range (`human`), duration, up to 5 opened files and 5 commits. Away time and alt-tab blips are skipped. A title naming a file shows it was in the foreground, not that it was edited; no recorded commit does not imply uncommitted changes.
+    Keywords: where was I, resume, what was I working on, dónde estaba, dónde lo dejé, en qué estaba trabajando, retomar.
     """
     return _post("/api/agent/activity_where_was_i", {"before": before, "contexts": contexts, "all_categories": all_categories})
 
@@ -212,26 +205,17 @@ def activity_project_resume(project: str, days: int = 30, limit: int = 5) -> dic
 
 @mcp.tool(annotations=_READ)
 def activity_timeline(
-    start: Optional[str] = None, end: Optional[str] = None, min_minutes: Optional[float] = None,
-    limit: int = 20, offset: int = 0, around: Optional[str] = None,
+    start: Annotated[Optional[str], Field(description='A single day word or date ("ayer", "2026-09-20") selects that whole day; otherwise range start. Default today.')] = None,
+    end: Annotated[Optional[str], Field(description="Range end; default now.")] = None,
+    min_minutes: Annotated[Optional[float], Field(description="Skip shorter spans. Default 2 for a day or less, 5 for longer ranges, 0 with `around`.")] = None,
+    limit: Annotated[int, Field(description="Max spans, up to 100.")] = 20,
+    offset: Annotated[int, Field(description="Use `next_offset` when `has_more` is true.")] = 0,
+    around: Annotated[Optional[str], Field(description="A search hit's `ts` (or any time): every span 30 min either side.")] = None,
 ) -> dict:
     """Timeline of the windows and apps used in a range, with durations. Cronología, qué hice hoy.
 
-    Chronological list of activity spans (one window/app at a time, or
-    away/locked) for a range, each with a stable `id`, app, title, category,
-    project, duration and a `human` time range. Default range: today. A
-    foreground window does not establish that a file was edited, a command
-    was run, or that the activity caused a simultaneous service incident.
-    Do not infer uninterrupted work between sampled spans.
-    single day word or date in `start` (e.g. "ayer", "2026-09-20") selects
-    that whole day; otherwise start..end (end defaults to now). For "what
-    was I doing around then", pass `around` = a search hit's `ts` (or any
-    time) instead: 30 min either side, every span. Spans under `min_minutes`
-    are skipped (default: 2 min for a day or less, 5 min for a longer
-    range, 0 with `around`). `limit` max 100; when `has_more` is true call
-    again with `offset=next_offset`. For a week or more, prefer
-    activity_summary for totals -- this tool's result grows with the range.
-    Keywords: timeline, what did I do, activity log, sequence of the day, which windows, around then, línea de tiempo, qué hice, que hice, historial, cronología del día, alrededor de, qué hacía entonces.
+    Spans in order (one window/app, or away/locked), each with `id`, app, title, category, project, duration and `human` range. A foreground window does not prove edits, commands or causes; do not infer uninterrupted work between spans. For a week or more prefer activity_summary.
+    Keywords: timeline, what did I do, activity log, around then, línea de tiempo, qué hice, historial, cronología del día, qué hacía entonces.
     """
     return _post(
         "/api/agent/activity_timeline",
@@ -241,39 +225,30 @@ def activity_timeline(
 
 @mcp.tool(annotations=_READ)
 def activity_summary(
-    day: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, group_by: str = "category",
+    day: Annotated[Optional[str], Field(description='today/hoy, yesterday/ayer, "this week"/"esta semana", "last week", a weekday name or an ISO date. Default today.')] = None,
+    start: Annotated[Optional[str], Field(description="Range start (ISO date or day word) instead of `day`.")] = None,
+    end: Annotated[Optional[str], Field(description="Range end; defaults to now.")] = None,
+    group_by: Annotated[str, Field(description='"category" | "app" | "project" | "all". Use "project" for time on one project.')] = "category",
 ) -> dict:
     """Time totals per category, app or project for a day, week or range. Cuánto tiempo, resumen del día.
 
-    Time totals for a day, week or range: active and away time (seconds
-    plus `active_human`), totals grouped by `group_by` = "category" | "app" |
-    "project" | "all" as both seconds (`by_*`) and ready-to-read strings
-    (`by_*_human`), first/last activity, number of context switches and
-    focus blocks (>= 25 min on one project/category, interruptions <= 2
-    min). `day` takes today/hoy, yesterday/ayer, "this week"/"esta semana",
-    "last week", a weekday name or an ISO date; or pass `start`/`end`.
-    Default: today. For "how much time on project X", use group_by="project".
-    Keywords: summary, how did I spend my day, time spent, how many hours, focus time, productivity, week report, resumen del día, en qué he gastado el tiempo, cuántas horas, cuanto tiempo, tiempo de foco, productividad, resumen semanal.
+    Active and away time, totals as seconds (`by_*`) and ready-to-read strings (`by_*_human`), first/last activity, context switches and focus blocks (>= 25 min on one project/category). Answer from the *_human strings.
+    Keywords: summary, time spent, how many hours, focus time, week report, resumen del día, cuántas horas, tiempo de foco, productividad, resumen semanal.
     """
     return _post("/api/agent/activity_summary", {"day": day, "start": start, "end": end, "group_by": group_by})
 
 
 @mcp.tool(annotations=_READ)
-def activity_search(query: str, since: Optional[str] = None, until: Optional[str] = None, limit: int = 10) -> dict:
+def activity_search(
+    query: Annotated[str, Field(description='Words to find; prefixes count ("duck" finds "DuckDB"), punctuation ignored. All words must match, else any word is tried and `matched` says "any word".')],
+    since: Annotated[Optional[str], Field(description='Day word ("ayer" = from yesterday 00:00) or ISO date.')] = None,
+    until: Annotated[Optional[str], Field(description="Day word or ISO date; default now.")] = None,
+    limit: Annotated[int, Field(description="Max hits, up to 100.")] = 10,
+) -> dict:
     """When did a window title, file or commit mention these words. Buscar en mi actividad, cuándo abrí.
 
-    Find when a window title, opened file path or commit subject containing
-    the words in `query` appeared, newest first. Word prefixes count ("duck"
-    finds "DuckDB") and punctuation is ignored. All words must match; if none
-    do, any word is tried and `matched` says "any word". Each hit has
-    `source` (span/file/commit), `ref_id`, `ts`, `when` ("yesterday 16:05")
-    and a short `text` with the match in [brackets]; a window-title hit
-    (span) also has how long it was open (`duration_s`, `human`), and
-    `windows_open_human` totals them for the returned hits. To see
-    what surrounded a hit, call activity_timeline(around=<its ts>).
-    `since`/`until` accept day words ("since": "ayer" = from yesterday
-    00:00) or ISO dates. `limit` max 100.
-    Keywords: search, find when, when did I see, that page about, that file called, that commit, buscar, cuándo vi, cuando abrí, esa página sobre, ese archivo llamado, ese commit.
+    Hits newest first, each with `source` (span/file/commit), `ref_id`, `ts`, `when` and a short `text` with the match in [brackets]; window hits also carry `duration_s`/`human`. To see what surrounded a hit, call activity_timeline(around=<its ts>).
+    Keywords: search, find when, that page about, that file called, that commit, buscar, cuándo vi, cuándo abrí, ese archivo, ese commit.
     """
     return _post("/api/agent/activity_search", {"query": query, "since": since, "until": until, "limit": limit})
 
@@ -324,35 +299,16 @@ def activity_pause(minutes: float = 15) -> dict:
 
 @mcp.tool(annotations=_READ)
 def recall(
-    at: Optional[str] = None, window_minutes: float = 15, sources: Optional[list[str]] = None, limit_per_source: int = 20, include_dropped: bool = False,
+    at: Annotated[Optional[str], Field(description='now/ahora, "a las 16:00", "hace 10 minutos", "ayer por la tarde", a weekday name or an ISO date/datetime. Omitted/now also returns `now` (current foreground window).')] = None,
+    window_minutes: Annotated[float, Field(description="Minutes either side of `at`.")] = 15,
+    sources: Annotated[Optional[list[str]], Field(description='Limit the fan-out to these source ids, e.g. ["argus"].')] = None,
+    limit_per_source: int = 20,
+    include_dropped: Annotated[bool, Field(description="Pass true to keep memories dropped as contradictory in items, marked 'descartado por contradiccion' with kept_citation.")] = False,
 ) -> dict:
     """What was I doing at a time: screen, clipboard, audio and PC in one call / qué estaba haciendo a esa hora.
-    Merged, time-sorted timeline around `at` +/- `window_minutes` (default 15
-    both ways), built from Funes's own episodes plus Argus (screen), Echo
-    (clipboard) and Scribe (audio). Each item has a short `citation` in
-    brackets (e.g. `[argus:moment 88 16:02]`) to quote verbatim when
-    answering, and a `ref` with the ids needed to open it with that source's
-    own tools for more detail. `summary.unavailable` lists any source that
-    could not answer (down, unauthorized, timed out) with a short reason --
-    never fatal, the rest of the timeline still comes back.
-    Funes episode titles only identify a foreground window: they do not show
-    edits, commands, intent or the cause of a simultaneous incident. Treat
-    unavailable sources as missing evidence, not as proof of no activity.
-    `at` accepts the
-    same words as Funes's own tools: now/ahora, "a las 16:00", "hace 10
-    minutos", "ayer por la tarde", a weekday name, or an ISO date/datetime.
-    `sources`, when given, limits the fan-out to those ids (e.g. ["argus"]).
-    Call this FIRST for "what was I doing / qué hacía / qué pasó a las X".
-    With `at` omitted or now/ahora the result also carries `now`: the
-    foreground app and window right now (the same as activity_now), since
-    the window still open has no finished episode in the timeline yet.
-    Contradictions: memories that disagree about the same subject (different time/date/value,
-    one states and another denies, opposite states) are resolved deterministically -- the best-supported
-    or most recent one stays, the others leave items and are listed in contradictions:
-    [{kept, dropped, reason}] (nothing is deleted). Pass include_dropped=true to keep them in items,
-    marked status "descartado por contradiccion" with kept_citation / hay memorias que se contradicen:
-    se conserva la mejor respaldada o mas reciente.
-    Keywords: what was I doing, what was on screen, what did I copy, timeline, recall, screen, clipboard, audio, at that time, around then, with citations, qué estaba haciendo, qué hacía, qué pasó, qué había en pantalla, qué copié, a esa hora, a las, de la madrugada, esta mañana, ayer, línea de tiempo, pantalla, portapapeles, audio, con citas.
+
+    Call FIRST for "what was I doing / qué pasó a las X". Merged timeline from Funes, Argus (screen), Echo (clipboard) and Scribe (audio); quote each item's bracket `citation` verbatim. `summary.unavailable` lists sources that failed: missing evidence, not proof of no activity. Contradicting memories keep the best supported one and list the rest in `contradictions`.
+    Keywords: what was I doing, timeline, recall, qué estaba haciendo, qué pasó, a esa hora, pantalla, portapapeles, audio, con citas.
     """
     return _post(
         "/api/agent/recall",
@@ -362,24 +318,17 @@ def recall(
 
 @mcp.tool(annotations=_READ)
 def recall_search(
-    query: str, since: Optional[str] = None, until: Optional[str] = None,
-    sources: Optional[list[str]] = None, limit_per_source: int = 20, include_dropped: bool = False,
+    query: Annotated[str, Field(description="Topic to search for (full text).")],
+    since: Annotated[Optional[str], Field(description='Day word ("ayer" = from yesterday 00:00) or ISO date/datetime. Default last 7 days.')] = None,
+    until: Annotated[Optional[str], Field(description="Day word or ISO date/datetime; default now.")] = None,
+    sources: Annotated[Optional[list[str]], Field(description='Limit the fan-out to these source ids, e.g. ["argus"].')] = None,
+    limit_per_source: int = 20,
+    include_dropped: Annotated[bool, Field(description="Pass true to keep memories dropped as contradictory in items, marked 'descartado por contradiccion' with kept_citation.")] = False,
 ) -> dict:
     """Find a topic across screen, clipboard, audio and PC memory / busca un tema en todas las apps.
-    Full-text search for `query` across Funes's own history, Argus (screen
-    OCR), Echo (clipboard) and Scribe (audio transcripts) in one range
-    (default: the last 7 days), merged newest first with the same short
-    bracket `citation` recall() uses. `since`/`until` accept day words
-    ("ayer" = from yesterday 00:00) or ISO dates/datetimes. `sources` limits
-    the fan-out to those ids. Prefer recall() when the question is about a
-    time instead of a topic.
-    Contradictions: memories that disagree about the same subject (different time/date/value,
-    one states and another denies, opposite states) are resolved deterministically -- the best-supported
-    or most recent one stays, the others leave items and are listed in contradictions:
-    [{kept, dropped, reason}] (nothing is deleted). Pass include_dropped=true to keep them in items,
-    marked status "descartado por contradiccion" with kept_citation / hay memorias que se contradicen:
-    se conserva la mejor respaldada o mas reciente.
-    Keywords: search everywhere, find across apps, when did I see that, busca en todo, cuándo vi eso, en qué app, screen and clipboard and audio.
+
+    Full-text search over Funes's history, Argus (screen OCR), Echo (clipboard) and Scribe (transcripts), merged newest first with the same bracket `citation` as recall(). Contradicting memories keep the best supported one and list the rest in `contradictions`. Prefer recall() when the question is about a time.
+    Keywords: search everywhere, find across apps, when did I see that, busca en todo, cuándo vi eso, en qué app.
     """
     return _post(
         "/api/agent/recall_search",
@@ -465,16 +414,14 @@ def scribe_export(session_id: str, format: str = "md") -> dict:
 
 
 @mcp.tool(annotations=_IDEMPOTENT_WRITE)
-def scribe_minutes(session_id: str, regenerate: bool = False) -> dict:
+def scribe_minutes(
+    session_id: str,
+    regenerate: Annotated[bool, Field(description="true replaces the stored minutes. Long meetings can take minutes.")] = False,
+) -> dict:
     """Meeting minutes of a session: summary, decisions, action items with evidence. Acta de reunión.
 
-    Writes (or returns the stored) minutes of a transcribed session with the local model: summary,
-    decisions, action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s,
-    speaker, literal quote}}, open questions and participants. Every action item's quote is verified against
-    the transcript and items without one are dropped. status: ready | no_model (no local language model;
-    nothing was invented) | not_ready (still transcribing) | no_speech | error. regenerate=true replaces
-    stored minutes. Long meetings can take minutes.
-    Sinónimos: acta, minutas, resumen de la reunión, acuerdos, tareas pendientes, qué se acordó, quién se comprometió, compromisos, action items, decisiones.
+    Writes (or returns the stored) minutes with the local model: summary, decisions, open questions, participants and action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s, speaker, literal quote}}. Quotes are verified against the transcript; items without one are dropped. status: ready | no_model (nothing invented) | not_ready | no_speech | error.
+    Sinónimos: acta, minutas, acuerdos, qué se acordó, quién se comprometió, action items, decisiones.
     """
     return _audio_call("scribe_minutes", {"session_id": session_id, "regenerate": regenerate}, timeout=1800.0)
 
