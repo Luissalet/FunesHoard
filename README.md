@@ -198,6 +198,10 @@ output of every tool, the error codes and a config snippet, and
 [docs/RECALL.md](docs/RECALL.md) explains the federated `recall` tools and
 citation format in full.
 
+Every tool description stays under 750 characters (about 250 tokens), so a
+host pays little for offering all of them; argument details live in each
+parameter's own description, and `tests/test_tool_descriptions.py` keeps it so.
+
 ## Shared models (HoardLink)
 
 The features that need a language model, "Write my day" and the meeting minutes, never load
