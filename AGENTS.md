@@ -9,7 +9,7 @@ Reglas para agentes de código que trabajen en este repositorio.
 - `funes_hoard/core/*` no debe importar FastAPI ni `sqlite3`. Es lógica
   pura y así se mantiene testeable sin levantar la app.
 - `funes_hoard/mcp_server.py` es un script independiente: solo puede
-  importar stdlib, `httpx` y `mcp`. Nunca `from funes_hoard import ...`.
+  importar stdlib, `httpx` y `mcp` (incluido `pydantic`, que el SDK de MCP ya instala y usa para describir los parámetros con `Field`). Nunca `from funes_hoard import ...`.
 - `funes_hoard/hoard_link/` es una copia exacta de otro repositorio
   (`hoard-link`, ver `VENDORED.txt`). **Nunca la edites**: cualquier
   necesidad nueva va en `funes_hoard/backend.py`, que la envuelve. Para

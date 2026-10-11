@@ -420,7 +420,7 @@ def scribe_minutes(
 ) -> dict:
     """Meeting minutes of a session: summary, decisions, action items with evidence. Acta de reunión.
 
-    Writes (or returns the stored) minutes with the local model: summary, decisions, open questions, participants and action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s, speaker, literal quote}}. Quotes are verified against the transcript; items without one are dropped. status: ready | no_model (nothing invented) | not_ready | no_speech | error.
+    Writes (or returns the stored) minutes with the configured model (Sparks or the global model): summary, decisions, open questions, participants and action items {owner yo|name, action, counterpart, due_date/due_text, evidence {start_s, end_s, speaker, literal quote}}. Quotes are verified against the transcript; items without one are dropped. status: ready | no_model (no model reachable; nothing invented) | not_ready | no_speech | error.
     Sinónimos: acta, minutas, acuerdos, qué se acordó, quién se comprometió, action items, decisiones.
     """
     return _audio_call("scribe_minutes", {"session_id": session_id, "regenerate": regenerate}, timeout=1800.0)
