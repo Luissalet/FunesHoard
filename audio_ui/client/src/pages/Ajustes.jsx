@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { useTurnRefresh } from "../copilot.js";
 import { useApp } from "../App.jsx";
 import { PageHeader, Switch } from "../components/ui.jsx";
 import { fmtBytes, KIND_LABEL } from "../format.js";
@@ -32,6 +33,8 @@ export default function Ajustes() {
   const { status, act } = useApp();
   const [settings, setSettings] = useState(null);
   useEffect(() => { api.settings().then(setSettings).catch(() => {}); }, []);
+  // Every control here saves on change, so there is no unsaved text to protect: just read the settings again.
+  useTurnRefresh(() => { api.settings().then(setSettings).catch(() => {}); });
   const save = async (patch) => {
     const updated = await act(() => api.updateSettings(patch));
     if (updated) setSettings(updated);

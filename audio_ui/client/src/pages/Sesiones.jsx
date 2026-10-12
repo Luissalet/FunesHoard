@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot.js";
+import { changedFields } from "../copilot-context.js";
 import { useApp } from "../App.jsx";
 import { Empty, PageHeader, StatusChip } from "../components/ui.jsx";
 import { fmtDateTime, fmtDuration, KIND_LABEL } from "../format.js";
@@ -19,6 +21,12 @@ export default function Sesiones() {
   const load = () => api.sessions({ q, kind, tag, from, to }).then((r) => setRows(r.sessions)).catch(() => setRows([]));
   useEffect(() => { load(); }, [q, kind, tag, from, to, status.sessions_total, status.queue_depth]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.tags().then((r) => setTags(r.tags)).catch(() => {}); }, [status.sessions_total]);
+  // After an assistant turn the list is read again in place; the filters stay as they are.
+  useTurnRefresh(() => { load(); api.tags().then((r) => setTags(r.tags)).catch(() => {}); });
+  useEditorSnapshot(() => {
+    const fields = changedFields({ q: "", kind: "", tag: "", from: "", to: "" }, { q, kind, tag, from, to });
+    return { kind: "sessions-filter-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   const onImport = async (e) => {
     const chosen = e.target.files && e.target.files[0];

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot.js";
+import { changedFields } from "../copilot-context.js";
 import { Empty, PageHeader } from "../components/ui.jsx";
 import { fmtClock, fmtDateTime, KIND_LABEL, SPEAKER_LABEL } from "../format.js";
 
@@ -11,13 +13,22 @@ export default function Buscar() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  const [tick, setTick] = useState(0);
+
   useEffect(() => {
     if (q.trim().length < 2) { setResult(null); return undefined; }
     const timer = setTimeout(() => {
       api.search({ q: q.trim(), kind, from, to }).then((r) => { setResult(r); setError(null); }).catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(timer);
-  }, [q, kind, from, to]);
+  }, [q, kind, from, to, tick]);
+
+  // After an assistant turn the same search runs again in place (the typed filters are untouched).
+  useTurnRefresh(() => setTick((n) => n + 1));
+  useEditorSnapshot(() => {
+    const fields = changedFields({ q: "", kind: "", from: "", to: "" }, { q, kind, from, to });
+    return { kind: "search-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   return (
     <div>

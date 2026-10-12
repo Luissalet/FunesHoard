@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
+import { useEditorSnapshot } from "../copilot.js";
+import { changedFields } from "../copilot-context.js";
 import Transcript from "../components/Transcript.jsx";
 import { Empty, PageHeader } from "../components/ui.jsx";
 import { fmtClock, KIND_LABEL } from "../format.js";
@@ -54,6 +56,14 @@ export default function Grabar() {
   const [language, setLanguage] = useState(s.default_language);
   const [starting, setStarting] = useState(false);
   useEffect(() => { setSystem((v) => v && status.devices.system.length > 0); }, [status.devices.system.length]);
+  // The new-recording form reports what differs from the defaults in Ajustes (status is refreshed by the app itself).
+  useEditorSnapshot(() => {
+    const fields = changedFields(
+      { title: "", kind: s.default_kind, mic: s.default_source_mic, system: s.default_source_system && status.devices.system.length > 0, language: s.default_language },
+      { title, kind, mic, system, language },
+    );
+    return { kind: "recording-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   const micName = (status.devices.mic.find((d) => d.default) || status.devices.mic[0] || {}).name;
   const sysName = (status.devices.system.find((d) => d.default) || status.devices.system[0] || {}).name;

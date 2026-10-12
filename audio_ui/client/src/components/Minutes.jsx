@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { useTurnRefresh } from "../copilot.js";
 import { fmtClock, fmtDateTime, SPEAKER_LABEL } from "../format.js";
 
 const OWNER_LABEL = { yo: "Yo", otros: "Otros" };
@@ -29,6 +30,9 @@ export default function Minutes({ sessionId, sessionDone, onSeek, notify }) {
     const later = [1500, 5000].map((ms) => setTimeout(load, ms));
     return () => later.forEach(clearTimeout);
   }, [sessionDone, load]);
+
+  // After an assistant turn (it may have written or regenerated the minutes) read them again in place.
+  useTurnRefresh(() => { if (sessionDone) load(); });
 
   useEffect(() => {
     clearInterval(timer.current);

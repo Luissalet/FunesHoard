@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
+import { useTurnRefresh } from "./copilot.js";
 import { Banner, Toast } from "./components/ui.jsx";
 import Grabar from "./pages/Grabar.jsx";
 import Sesiones from "./pages/Sesiones.jsx";
@@ -57,6 +58,7 @@ export default function App() {
       return null;
     }
   }, []);
+  useTurnRefresh(refresh);
   const busy = !!(status && (status.recording || status.queue_depth > 0));
   useEffect(() => {
     refresh();

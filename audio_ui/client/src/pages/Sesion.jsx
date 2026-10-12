@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot.js";
+import { changedFields } from "../copilot-context.js";
 import { useApp } from "../App.jsx";
 import Minutes from "../components/Minutes.jsx";
 import Player from "../components/Player.jsx";
@@ -8,9 +10,17 @@ import { Confirm, PageHeader, StatusChip } from "../components/ui.jsx";
 import { fmtDateTime, fmtDuration, KIND_LABEL } from "../format.js";
 import { useLive } from "../live.js";
 
-function Editable({ value, onCommit, className = "field", as = "input", ...props }) {
+function Editable({ value, onCommit, draftRef, className = "field", as = "input", ...props }) {
   const [draft, setDraft] = useState(value || "");
-  useEffect(() => setDraft(value || ""), [value]);
+  const loaded = useRef(value || "");
+  // A reload (also after an assistant turn) only replaces the text if the user has not typed over it.
+  useEffect(() => {
+    const next = value || "";
+    const previous = loaded.current;
+    loaded.current = next;
+    setDraft((current) => (current === previous ? next : current));
+  }, [value]);
+  if (draftRef) draftRef.current = draft;
   const commit = () => { if (draft !== (value || "")) onCommit(draft); };
   const Tag = as;
   return <Tag className={className} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => as === "input" && e.key === "Enter" && commit()} {...props} />;
@@ -30,6 +40,18 @@ export default function Sesion() {
   useEffect(() => { load(); }, [load]);
   const active = !!session && (session.status === "recording" || session.status === "processing");
   const { segments: liveSegments } = useLive(id, active, () => load());
+  // After an assistant turn the session is read again in place; the title/notes being typed keep their text.
+  useTurnRefresh(() => { load(); });
+  const titleDraft = useRef(null);
+  const notesDraft = useRef(null);
+  useEditorSnapshot(() => {
+    if (!session) return null;
+    const fields = changedFields(
+      { title: session.title || "", notes: session.notes || "", new_tag: "" },
+      { title: titleDraft.current ?? session.title ?? "", notes: notesDraft.current ?? session.notes ?? "", new_tag: tagDraft },
+    );
+    return { kind: "session-form", object_id: id, dirty: Object.keys(fields).length > 0, fields };
+  });
   useEffect(() => {
     const t = Number(route.query.get("t"));
     if (session && session.status === "done" && Number.isFinite(t) && t > 0) setSeek({ t });
@@ -45,7 +67,7 @@ export default function Sesion() {
   const addTag = (e) => {
     e.preventDefault();
     if (!tagDraft.trim()) return;
-    save({ tags: [...session.tags, tagDraft.trim()] }, "Etiqueta añadida.");
+    save({ add_tags: [tagDraft.trim()] }, "Etiqueta añadida.");
     setTagDraft("");
   };
   const remove = async () => {
@@ -58,7 +80,7 @@ export default function Sesion() {
   return (
     <div>
       <a href="#/sesiones" className="btn-link text-[13px]">← Sesiones</a>
-      <PageHeader title={<Editable value={session.title} onCommit={(v) => save({ title: v }, "Título guardado.")} className="field text-[22px] font-semibold" aria-label="Título" maxLength={200} />}>
+      <PageHeader title={<Editable value={session.title} draftRef={titleDraft} onCommit={(v) => save({ title: v }, "Título guardado.")} className="field text-[22px] font-semibold" aria-label="Título" maxLength={200} />}>
         <div className="flex flex-wrap gap-2">
           {isRecordingThis && <button type="button" className="btn btn-primary" onClick={stopRecording}>Parar grabación</button>}
           {session.status === "done" && ["txt", "srt", "md"].map((f) => <a key={f} className="btn" href={api.exportUrl(id, f)} download>{f.toUpperCase()}</a>)}
@@ -101,13 +123,13 @@ export default function Sesion() {
         <aside className="grid content-start gap-4">
           <section className="panel">
             <label className="label" htmlFor="notes">Notas</label>
-            <Editable as="textarea" id="notes" value={session.notes} onCommit={(v) => save({ notes: v }, "Notas guardadas.")} placeholder="Acuerdos, tareas, contexto… se guarda al salir del campo." maxLength={20000} />
+            <Editable as="textarea" id="notes" value={session.notes} draftRef={notesDraft} onCommit={(v) => save({ notes: v }, "Notas guardadas.")} placeholder="Acuerdos, tareas, contexto… se guarda al salir del campo." maxLength={20000} />
           </section>
           <section className="panel">
             <div className="label">Etiquetas</div>
             <div className="flex flex-wrap gap-1">
               {session.tags.map((t) => (
-                <span key={t} className="chip chip-tag">{t} <button type="button" className="ml-1" aria-label={`Quitar ${t}`} onClick={() => save({ tags: session.tags.filter((x) => x !== t) }, "Etiqueta quitada.")}>×</button></span>
+                <span key={t} className="chip chip-tag">{t} <button type="button" className="ml-1" aria-label={`Quitar ${t}`} onClick={() => save({ remove_tags: [t] }, "Etiqueta quitada.")}>×</button></span>
               ))}
               {!session.tags.length && <span className="help">Sin etiquetas.</span>}
             </div>
