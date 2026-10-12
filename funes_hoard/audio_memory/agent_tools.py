@@ -213,9 +213,8 @@ def run_note(svc: Services, a: NoteArgs):
 
 
 def run_tag(svc: Services, a: TagArgs):
-    session = _require(svc, a.session_id)
-    tags = [t for t in session["tags"] if t not in {r.strip().lower() for r in a.remove}] + [t for t in a.add]
-    updated = svc.sessions.update(a.session_id, tags=tags)
+    _require(svc, a.session_id)
+    updated = svc.sessions.change_tags(a.session_id, a.add, a.remove)
     return {"ok": True, "tags": updated["tags"]}
 
 

@@ -40,6 +40,9 @@ class PatchBody(BaseModel):
     notes: str | None = Field(None, max_length=20000)
     tags: list[str] | None = Field(None, max_length=30)
     kind: Kind | None = None
+    # Tag changes that merge into the stored list (a stale copy of `tags` would overwrite a tag added meanwhile).
+    add_tags: list[str] | None = Field(None, max_length=30)
+    remove_tags: list[str] | None = Field(None, max_length=30)
 
 
 def _lookup(error: Exception) -> HTTPException:
@@ -122,7 +125,13 @@ def make_minutes(request: Request, session_id: str, body: MinutesBody | None = N
 def patch(request: Request, session_id: str, body: PatchBody):
     svc = services(request)
     require_session(svc, session_id)
-    return svc.sessions.update(session_id, **body.model_dump(exclude_none=True))
+    # Only the fields sent are touched (title, notes, kind and tags are independent columns).
+    fields = body.model_dump(exclude_none=True)
+    add, remove = fields.pop("add_tags", None), fields.pop("remove_tags", None)
+    session = svc.sessions.update(session_id, **fields)
+    if add or remove:
+        session = svc.sessions.change_tags(session_id, add or [], remove or [])
+    return session
 
 
 @router.delete("/{session_id}")

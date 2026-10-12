@@ -122,6 +122,22 @@ class SessionStore:
                 self.db.conn.execute("UPDATE segments_fts SET title = ? WHERE session_id = ?", (data["title"], session_id))
         return self.get(session_id)
 
+    def change_tags(self, session_id: str, add=(), remove=()) -> dict | None:
+        """Add and/or remove tags without replacing the list.
+
+        The read and the write share one lock, so a tag someone else added in the meantime (the assistant, another
+        window) survives instead of being overwritten by a stale copy of the list.
+        """
+        drop = set(normalize_tags(remove))
+        with self.db.lock:
+            row = self.db.conn.execute("SELECT tags FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if row is None:
+                return None
+            kept = [t for t in json.loads(row["tags"] or "[]") if t not in drop]
+            tags = normalize_tags(kept + list(add or []))
+            self.db.conn.execute("UPDATE sessions SET tags = ? WHERE id = ?", (json.dumps(tags), session_id))
+            return self.get(session_id)
+
     def append_notes(self, session_id: str, text: str) -> dict | None:
         current = self.get(session_id)
         if current is None:
