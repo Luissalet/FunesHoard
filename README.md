@@ -202,6 +202,16 @@ Every tool description stays under 750 characters (about 250 tokens), so a
 host pays little for offering all of them; argument details live in each
 parameter's own description, and `tests/test_tool_descriptions.py` keeps it so.
 
+## Faustus assistant
+
+Once the shared Hoard Link launcher is installed, the app shows the family's Faustus panel (a floating button) in both the activity interface and the audio pages. The conversation, the model and the tools live in Faustus; this app only tells the panel what is open.
+
+- **Context per view.** Only ids, titles and short previews leave the app: no window-title history, tokens or whole documents. In the activity interface the panel receives the page (`today`, `timeline`, `week`, `search`, `projects`, `files`, `rules`, `privacy`, `assistant`, `settings`), the open `day` and the pinned `span` (kind, from, to, minutes, category). In the audio pages it receives the open `audio_session` (title, up to 10 tags), its `minutes`, and a session that is being recorded (status `recording`, elapsed seconds). Creation views give no object.
+- **Unsaved fields.** The panel asks for them with the `funes:context-request` window event. Activity forms: `search-form`, `sources-form`, `commit-sources-form`, `recall-form`, `classify-rule-form`, `privacy-rule-form`, `privacy-retention-form`, `privacy-delete-range-form`, `settings-form`. Audio forms: `search-form`, `recording-form`, `session-form`, `sessions-filter-form`.
+- **Refresh.** When the assistant finishes a turn the open view reloads in place (`hoard:copilot-turn-end` / `window.hoardCopilot.onTurnEnd`); forms you are editing keep what you typed.
+- **Saving.** Forms send only the fields that changed. `PATCH /api/sessions/{id}` touches only the fields sent and has new `add_tags` and `remove_tags`; the new `change_tags` reads and writes under one lock, and the `tag` tool uses it, so a tag added elsewhere is never overwritten. `PUT /api/backend/config` merges per key, an empty string removes one override, and the token is sent only when typed.
+- **Tests.** `node --test frontend/copilot-context.test.mjs`, `node --test audio_ui/copilot-context.test.mjs` and `python -m pytest tests/test_partial_updates.py`.
+
 ## Shared models (HoardLink)
 
 The features that need a language model, "Write my day" and the meeting minutes, never load

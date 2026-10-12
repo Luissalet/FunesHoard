@@ -215,6 +215,16 @@ tokens), así que ofrecerlas todas cuesta poco al anfitrión; el detalle de cada
 argumento está en la descripción de su parámetro y `tests/test_tool_descriptions.py`
 lo vigila.
 
+## Asistente de Faustus
+
+Con el lanzador compartido de Hoard Link instalado, la app muestra el panel de Faustus de la familia (un botón flotante) tanto en la interfaz de actividad como en las páginas de audio. La conversación, el modelo y las herramientas viven en Faustus; esta app solo le dice al panel qué hay abierto.
+
+- **Contexto por vista.** De la app solo salen ids, títulos y vistas previas cortas: ni historial de títulos de ventana, ni tokens, ni documentos enteros. En la interfaz de actividad el panel recibe la página (`today`, `timeline`, `week`, `search`, `projects`, `files`, `rules`, `privacy`, `assistant`, `settings`), el `day` abierto y el `span` fijado (tipo, desde, hasta, minutos, categoría). En las páginas de audio recibe el `audio_session` abierto (título, hasta 10 etiquetas), sus `minutes` y la sesión que se está grabando (estado `recording`, segundos transcurridos). Las vistas de creación no dan objeto.
+- **Campos sin guardar.** El panel los pide con el evento de ventana `funes:context-request`. Formularios de actividad: `search-form`, `sources-form`, `commit-sources-form`, `recall-form`, `classify-rule-form`, `privacy-rule-form`, `privacy-retention-form`, `privacy-delete-range-form`, `settings-form`. Formularios de audio: `search-form`, `recording-form`, `session-form`, `sessions-filter-form`.
+- **Refresco.** Cuando el asistente termina un turno, la vista abierta se recarga en el sitio (`hoard:copilot-turn-end` / `window.hoardCopilot.onTurnEnd`); los formularios que estás editando conservan lo escrito.
+- **Guardado.** Los formularios envían solo los campos que han cambiado. `PATCH /api/sessions/{id}` toca solo los campos enviados y tiene los nuevos `add_tags` y `remove_tags`; el nuevo `change_tags` lee y escribe bajo un mismo bloqueo y la herramienta `tag` lo usa, así que una etiqueta añadida en otro sitio nunca se sobrescribe. `PUT /api/backend/config` fusiona por clave, una cadena vacía quita un único ajuste y el token solo se envía cuando se ha escrito.
+- **Pruebas.** `node --test frontend/copilot-context.test.mjs`, `node --test audio_ui/copilot-context.test.mjs` y `python -m pytest tests/test_partial_updates.py`.
+
 ## Modelos compartidos (HoardLink)
 
 Las funciones que necesitan un modelo de lenguaje, "Escribe mi día" y las actas,
