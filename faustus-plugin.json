@@ -26,6 +26,7 @@
     "env": {"FUNES_URL": "{APP_URL}"},
     "optional_env": ["FUNES_DATA_DIR", "FUNES_AUDIO_TOKEN_FILE"]
   },
+  "x-family": {"copilot": true},
   "provides": {"skills": ["skills/where-was-i/SKILL.md"]},
   "notes": "Local episodic memory: foreground app/window, idle/away, files and commits. Audio recording, transcription, session management and search run inside Funes at /audio and share one launcher and one MCP connection. Audio data lives in data/audio and is retained independently of desktop-activity retention. Recall preserves the source id 'scribe' for existing citations, while Argus (screen) and Echo (clipboard) remain external sources."
 }

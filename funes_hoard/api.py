@@ -33,6 +33,7 @@ from funes_hoard.errors import BadInput
 from funes_hoard.git_watch import GitCommitsPoller, configured_authors
 from funes_hoard.hoard_link import BackendError, Link, Unavailable
 from funes_hoard.hoard_link import family
+from funes_hoard.hoard_link.copilot import install_copilot
 from funes_hoard.hoard_link.guard import install_guard, parse_allowed_hosts
 from funes_hoard.hoard_link.tokens import check_bearer, read_token
 from funes_hoard.jobs import JobManager
@@ -1042,6 +1043,9 @@ def create_app(
         return {"deleted": repo_id}
 
     # --------------------------------------------------------------- SPA --
+    # The shared assistant panel (relay + launcher on every HTML page, /audio included): routes go before the catch-all below.
+    install_copilot(app, "funes", str(data_dir), app_name=DISPLAY_NAME)
+
     if audio_app is not None:
         app.mount("/audio", audio_app, name="audio")
     else:
