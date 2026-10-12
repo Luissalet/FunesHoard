@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Brain, RefreshCw } from "lucide-react";
-import { api, errorMessage, type BackendConfigPatch, type BackendStatus } from "../api";
+import { api, errorMessage, type BackendStatus } from "../api";
 import { STRINGS, type Lang } from "../i18n";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot";
+import { changedFields, configPatch } from "../copilot-context";
 import { Badge } from "./Common";
 
 const STATE_COLOR: Record<string, string> = { resolved: "#1a7f37", unavailable: "#8a8a8a" };
@@ -23,14 +25,21 @@ export function SettingsView({ lang }: { lang: Lang }) {
   const [featureMsg, setFeatureMsg] = useState<string | null>(null);
   const [meetingsAwayMin, setMeetingsAwayMin] = useState(30);
 
+  // What the form held when it was last loaded: a reload (also after an assistant turn) only replaces the fields the
+  // user has not touched, and saving sends only the fields that differ from this.
+  const loaded = useRef({ faustus_url: "", llm_url: "", llm_model: "" });
+
   function refresh() {
     api
       .backendStatus()
       .then((s) => {
         setStatus(s);
-        setFaustusUrl(s.faustus_url || "");
-        setLlmUrl(s.llm_url_override || "");
-        setLlmModel(s.llm_model_override || "");
+        const next = { faustus_url: s.faustus_url || "", llm_url: s.llm_url_override || "", llm_model: s.llm_model_override || "" };
+        const previous = loaded.current;
+        loaded.current = next;
+        setFaustusUrl((v) => (v === previous.faustus_url ? next.faustus_url : v));
+        setLlmUrl((v) => (v === previous.llm_url ? next.llm_url : v));
+        setLlmModel((v) => (v === previous.llm_model ? next.llm_model : v));
         setWriteMyDay(s.write_my_day_enabled);
         setLoadError(null);
       })
@@ -38,6 +47,12 @@ export function SettingsView({ lang }: { lang: Lang }) {
     api.meetingsAwaySetting().then((r) => setMeetingsAwayMin(r.minutes)).catch(() => {});
   }
   useEffect(refresh, []);
+  useTurnRefresh(refresh);
+  // The token is never reported, only that something was typed in its field.
+  useEditorSnapshot(() => {
+    const fields = changedFields(loaded.current, { faustus_url: faustusUrl, llm_url: llmUrl, llm_model: llmModel });
+    return { kind: "settings-form", object_id: null, dirty: Object.keys(fields).length > 0 || faustusToken.trim() !== "", fields };
+  });
 
   const llm = status?.capabilities?.llm;
 
@@ -55,13 +70,10 @@ export function SettingsView({ lang }: { lang: Lang }) {
     setSaveError(null);
     setSaveMsg(null);
     try {
-      // A blank field is sent as "" so emptying it removes a saved override;
-      // the token is the exception -- blank means "keep the stored one".
-      const patch: BackendConfigPatch = {
-        faustus_url: faustusUrl.trim(),
-        capabilities: { llm: { url: llmUrl.trim(), model: llmModel.trim() } },
-      };
-      if (faustusToken.trim()) patch.faustus_token = faustusToken.trim();
+      // Only what differs from what was loaded is sent, so a change the assistant made meanwhile to another field
+      // survives. A blank field is sent as "" so emptying it removes a saved override; the token is the exception:
+      // blank means "keep the stored one".
+      const patch = configPatch(loaded.current, { faustus_url: faustusUrl, llm_url: llmUrl, llm_model: llmModel }, faustusToken);
       const res = await api.saveBackendConfig(patch);
       setFaustusToken("");
       setSaveMsg(res.faustus_token_set ? t.settings_saved_with_token : t.settings_saved);

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api, localeFor, errorMessage, formatDuration, isoDay, parseIsoDay } from "../api";
 import { categoryColor } from "../categoryColors";
 import { STRINGS, type Lang } from "../i18n";
+import { useTurnRefresh } from "../copilot";
 import { EmptyState } from "./Common";
 
 export function WeekView({ lang }: { lang: Lang }) {
@@ -20,6 +21,10 @@ export function WeekView({ lang }: { lang: Lang }) {
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
   }, [anchor]);
+
+  useTurnRefresh(() => {
+    api.week(anchor).then((r) => setDays(r.days)).catch(() => {});
+  });
 
   function shift(weeks: number) {
     const d = parseIsoDay(anchor);

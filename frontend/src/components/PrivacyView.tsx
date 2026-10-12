@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot";
+import { changedFields } from "../copilot-context";
 import { Download, Plus, Trash2 } from "lucide-react";
 import { api, errorMessage, formatClock, parseIsoDay, type PrivacyRule, type StatusInfo } from "../api";
 import { fmt, STRINGS, type Lang } from "../i18n";
@@ -19,11 +21,34 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [retentionMsg, setRetentionMsg] = useState<string | null>(null);
 
+  const retentionLoaded = useRef(180);
+
   function refresh() {
     api.privacyRules().then((r) => setRules(r.items));
-    api.getRetention().then((r) => setRetentionDays(r.days));
+    api.getRetention().then((r) => {
+      // A reload (also after an assistant turn) keeps a retention the user is typing.
+      const previous = retentionLoaded.current;
+      retentionLoaded.current = r.days;
+      setRetentionDays((current) => (current === previous ? r.days : current));
+    });
   }
   useEffect(refresh, []);
+  useTurnRefresh(() => {
+    refresh();
+    onStatusChange();
+  });
+  useEditorSnapshot(() => {
+    const fields = changedFields({ kind: "exclude", match_type: "app", pattern: "" }, { kind: draftKind, match_type: draftMatch, pattern: draftPattern });
+    return { kind: "privacy-rule-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
+  useEditorSnapshot(() => {
+    const fields = changedFields({ retention_days: retentionLoaded.current }, { retention_days: retentionDays });
+    return { kind: "privacy-retention-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
+  useEditorSnapshot(() => {
+    const fields = changedFields({ start: "", end: "" }, { start: rangeStart, end: rangeEnd });
+    return { kind: "privacy-delete-range-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   // A9: "delete the half hour I forgot" -- fill both pickers in one click.
   function preset(minutes: number | "today") {
@@ -175,6 +200,7 @@ export function PrivacyView({ lang, status, onStatusChange }: { lang: Lang; stat
               onClick={async () => {
                 try {
                   const r = await api.setRetention(retentionDays);
+                  retentionLoaded.current = r.days;
                   setRetentionMsg(`${t.saved}: ${r.days} ${t.retention_days}`);
                 } catch (err) {
                   setRetentionMsg(errorMessage(err));

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useTurnRefresh } from '../copilot';
 import { Bot, CheckCircle2, GitCommit, RefreshCw } from 'lucide-react';
 import { api, errorMessage, formatClock, formatLongDate, type AgentDay, type AgentEventKind } from '../api';
 import { STRINGS, type Lang } from '../i18n';
@@ -11,10 +12,14 @@ export function AgentLane({ day, lang }: { day: string; lang: Lang }) {
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
+  // After an assistant turn the first page is fetched again without blanking the list.
+  const quiet = useRef(false);
+  useTurnRefresh(() => { quiet.current = true; setOffset(0); setRefresh(n => n + 1); });
   useEffect(() => {
     let cancelled = false;
     setBusy(true); setError('');
-    if (offset === 0) setData(null);
+    if (offset === 0 && !quiet.current) setData(null);
+    quiet.current = false;
     api.agentsDay({ day, kind: kind || undefined, offset, limit: 10 })
       .then(next => {
         if (cancelled) return;

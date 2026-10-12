@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, formatDuration, localeFor, type ProjectItem } from "../api";
 import { STRINGS, type Lang } from "../i18n";
+import { useTurnRefresh } from "../copilot";
 import { EmptyState } from "./Common";
 
 const RANGES = [
@@ -24,6 +25,10 @@ export function ProjectsView({ lang }: { lang: Lang }) {
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
   }, [range]);
+
+  useTurnRefresh(() => {
+    api.projects({ since: RANGES[range].since, limit: 30 }).then((r) => setItems(r.items)).catch(() => {});
+  });
 
   if (loading) return null;
   const max = Math.max(1, ...items.map((p) => p.time_s));

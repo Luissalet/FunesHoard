@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatClock, type AgentCall } from "../api";
 import { STRINGS, type Lang } from "../i18n";
+import { useTurnRefresh } from "../copilot";
 import { EmptyState } from "./Common";
 
 export function AssistantActivityView({ lang }: { lang: Lang }) {
@@ -8,13 +9,16 @@ export function AssistantActivityView({ lang }: { lang: Lang }) {
   const [calls, setCalls] = useState<AgentCall[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = () =>
     api
       .agentCalls(100)
       .then((r) => setCalls(r.items))
       .catch(() => setCalls([]))
       .finally(() => setLoading(false));
-  }, []);
+  useEffect(() => {
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useTurnRefresh(load);
 
   if (loading) return null;
 

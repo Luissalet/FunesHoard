@@ -13,6 +13,7 @@ import { SettingsView } from "./components/SettingsView";
 import { RecallTimelineView } from "./components/RecallTimelineView";
 import { api, isoDay, type StatusInfo } from "./api";
 import { detectLang, STRINGS, type Lang } from "./i18n";
+import { useTurnRefresh } from "./copilot";
 
 const TITLES: Record<ViewId, keyof typeof STRINGS["en"]> = {
   today: "nav_today",
@@ -71,6 +72,8 @@ export default function App() {
   const refreshStatus = useCallback(() => {
     api.status().then(setStatus).catch(() => {});
   }, []);
+
+  useTurnRefresh(refreshStatus);
 
   useEffect(() => {
     refreshStatus();

@@ -1,5 +1,7 @@
 import { RefreshCw, Search as SearchIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot";
+import { changedFields } from "../copilot-context";
 import { api, errorMessage, type RecallContradiction, type RecallItem, type RecallResponse, type SourceHealthItem, type SourceItem } from "../api";
 import { STRINGS, type Lang } from "../i18n";
 import { Badge, EmptyState } from "./Common";
@@ -103,6 +105,14 @@ function SourcesCard({ lang, t, onChanged }: { lang: Lang; t: Strings; onChanged
   }, []);
 
   useEffect(refresh, [refresh]);
+  useTurnRefresh(refresh);
+  useEditorSnapshot(() => {
+    // Only the base URLs the user typed over (an untouched row follows the reloaded value).
+    const fields = Object.fromEntries(
+      Object.entries(edits).filter(([id, value]) => value !== items.find((s) => s.id === id)?.base_url).map(([id, value]) => [`${id}_base_url`, value]),
+    );
+    return { kind: "sources-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   const save = (id: string, patch: Partial<Pick<SourceItem, "base_url" | "enabled">>) => {
     setSaving(id);
@@ -187,7 +197,11 @@ export function RecallTimelineView({ lang }: { lang: Lang }) {
   const [loading, setLoading] = useState(false);
   const [includeDropped, setIncludeDropped] = useState(false);
 
+  // What produced the list on screen, so an assistant turn re-runs that and not whatever is half typed.
+  const shown = useRef<{ search: string | null }>({ search: null });
+
   const runRecall = useCallback(() => {
+    shown.current.search = null;
     setLoading(true);
     setError(null);
     api
@@ -199,8 +213,23 @@ export function RecallTimelineView({ lang }: { lang: Lang }) {
 
   useEffect(runRecall, [runRecall]);
 
+  useTurnRefresh(() => {
+    const q = shown.current.search;
+    (q
+      ? api.recallSearch(q, { include_dropped: includeDropped ? "true" : undefined })
+      : api.recall({ at: at || undefined, window: windowMinutes, include_dropped: includeDropped ? "true" : undefined })
+    )
+      .then(setResult)
+      .catch(() => {});
+  });
+  useEditorSnapshot(() => {
+    const fields = changedFields({ at: "", window_minutes: 15, query: "", include_dropped: false }, { at, window_minutes: windowMinutes, query, include_dropped: includeDropped });
+    return { kind: "recall-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
+
   const runSearch = () => {
     if (!query.trim()) return runRecall();
+    shown.current.search = query.trim();
     setLoading(true);
     setError(null);
     api

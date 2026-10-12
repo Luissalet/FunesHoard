@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot";
+import { changedFields } from "../copilot-context";
 import { Plus, Trash2 } from "lucide-react";
 import { api, localeFor, errorMessage, type CommitItem, type CommitRepo, type FileEventItem } from "../api";
 import { STRINGS, fmt, type Lang } from "../i18n";
@@ -10,6 +12,7 @@ export function FilesCommitsView({ lang }: { lang: Lang }) {
   const [commits, setCommits] = useState<CommitItem[]>([]);
   const [repos, setRepos] = useState<CommitRepo[]>([]);
   const [authors, setAuthors] = useState("");
+  const authorsLoaded = useRef("");
   const [authorsMsg, setAuthorsMsg] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,13 +24,25 @@ export function FilesCommitsView({ lang }: { lang: Lang }) {
         setFiles(f.items);
         setRepos(r.items);
         setCommits(c.items);
-        setAuthors(a.authors.join(", "));
+        // A reload (also after an assistant turn) must not overwrite what the user is typing.
+        const next = a.authors.join(", ");
+        const previous = authorsLoaded.current;
+        setAuthors((current) => (current === previous ? next : current));
+        authorsLoaded.current = next;
       })
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
   }
 
   useEffect(refresh, []);
+  useTurnRefresh(refresh);
+  useEditorSnapshot(() => {
+    const fields = {
+      ...changedFields({ path: "" }, { path: newPath }),
+      ...changedFields({ authors: authorsLoaded.current }, { authors }),
+    };
+    return { kind: "commit-sources-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   if (loading) return null;
   const when = (ts: number) =>
@@ -110,7 +125,8 @@ export function FilesCommitsView({ lang }: { lang: Lang }) {
               onClick={async () => {
                 try {
                   const res = await api.setCommitAuthors(authors.split(",").map((a) => a.trim()).filter(Boolean));
-                  setAuthors(res.authors.join(", "));
+                  authorsLoaded.current = res.authors.join(", ");
+                  setAuthors(authorsLoaded.current);
                   setAuthorsMsg(t.saved);
                 } catch (err) {
                   setAuthorsMsg(errorMessage(err));

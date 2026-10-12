@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { api, errorMessage, type ClassifyRule } from "../api";
 import { categoryLabel, fmt, STRINGS, type Lang } from "../i18n";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot";
+import { changedFields } from "../copilot-context";
 
 const emptyDraft = { match_type: "app", pattern: "", category: "Coding", project: "" };
 
@@ -22,6 +24,11 @@ export function RulesView({ lang }: { lang: Lang }) {
     });
   }
   useEffect(refresh, []);
+  useTurnRefresh(refresh);
+  useEditorSnapshot(() => {
+    const fields = changedFields(emptyDraft, draft);
+    return { kind: "classify-rule-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
 
   async function runPreview() {
     if (!draft.pattern.trim()) return;

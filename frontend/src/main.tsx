@@ -6,6 +6,9 @@ import "./hoard-theme.css";
 import "./theme.css";
 import "./app.css";
 import App from "./App";
+import { install as installCopilot } from "./copilot";
+
+installCopilot();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

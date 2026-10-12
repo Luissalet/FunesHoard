@@ -1,5 +1,7 @@
 import { FileText, GitCommit, Monitor, Search } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useEditorSnapshot, useTurnRefresh } from "../copilot";
+import { changedFields } from "../copilot-context";
 import { api, errorMessage, formatClock, formatDuration, formatLongDate, isoDay, type SearchItem } from "../api";
 import { fmt, STRINGS, type Lang } from "../i18n";
 import { EmptyState } from "./Common";
@@ -22,10 +24,29 @@ export function SearchView({ lang, onOpenMoment }: { lang: Lang; onOpenMoment: (
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // The search that produced the results on screen (what an assistant turn re-runs, whatever is typed meanwhile).
+  const lastRun = useRef<{ q: string; range: number } | null>(null);
+  useTurnRefresh(() => {
+    const run = lastRun.current;
+    if (!run) return;
+    api
+      .search(run.q, { limit: 60, since: RANGES[run.range].since })
+      .then((res) => {
+        setItems(res.items);
+        setTruncated(res.truncated);
+      })
+      .catch(() => {});
+  });
+  useEditorSnapshot(() => {
+    const fields = changedFields({ query: "", range: "any_time" }, { query, range: RANGES[range].key });
+    return { kind: "search-form", object_id: null, dirty: Object.keys(fields).length > 0, fields };
+  });
+
   async function runSearch(rangeIndex = range) {
     if (!query.trim()) return;
     setLoading(true);
     setError(null);
+    lastRun.current = { q: query.trim(), range: rangeIndex };
     try {
       const res = await api.search(query.trim(), { limit: 60, since: RANGES[rangeIndex].since });
       setItems(res.items);

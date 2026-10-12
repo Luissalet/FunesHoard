@@ -17,6 +17,8 @@ import { categoryColor } from "../categoryColors";
 import { categoryLabel, STRINGS, type Lang } from "../i18n";
 import { CategoryBarList, BarList, EmptyState } from "./Common";
 import { AgentLane } from './AgentLane';
+import { useTurnRefresh } from "../copilot";
+import { setSelectedSpan } from "../copilot-context";
 
 type Zoom = "active" | "day";
 
@@ -60,6 +62,22 @@ export function TodayView({
       cancelled = true;
     };
   }, [day]);
+
+  // After an assistant turn: reload the day's numbers in place (the pinned span and the zoom stay as they are).
+  useTurnRefresh(() => {
+    Promise.all([api.timeline({ day, min_minutes: 0.5, limit: 100 }), api.summary({ day })])
+      .then(([tl, sm]) => {
+        setTimeline(tl);
+        setSummary(sm);
+      })
+      .catch(() => {});
+  });
+
+  // The assistant panel is told which span is pinned.
+  useEffect(() => {
+    setSelectedSpan(selected);
+    return () => setSelectedSpan(null);
+  }, [selected]);
 
   const spans = useMemo(() => timeline?.items || [], [timeline]);
   const isToday = day === isoDay(new Date());
@@ -325,6 +343,10 @@ function WriteMyDayCard({ day, lang, hasActivity }: { day: string; lang: Lang; h
     };
   }, [day]);
 
+  useTurnRefresh(() => {
+    api.dayNarrative(day).then(setNarrative).catch(() => {});
+  });
+
   async function write(force: boolean) {
     setBusy(true);
     setError(null);
@@ -411,6 +433,13 @@ function WhereWasICard({
       cancelled = true;
     };
   }, [day, isToday]);
+
+  useTurnRefresh(() => {
+    api
+      .whereWasI({ before: isToday ? undefined : day, contexts: 3 })
+      .then((r) => setContexts(r.contexts))
+      .catch(() => {});
+  });
 
   if (contexts === null && !error) return null;
   const fileName = (path: string) => path.split(/[\\/]/).pop() || path;
