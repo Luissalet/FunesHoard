@@ -32,7 +32,7 @@
     "health": {
       "path": "/api/health",
       "expect": {
-        "service": "funes-hoard"
+        "service": "absorbed-funes"
       }
     },
     "identify": {
@@ -72,5 +72,5 @@
       "skills/where-was-i/SKILL.md"
     ]
   },
-  "notes": "Absorbed by Talos's Hoard: https://github.com/Luissalet/TalosHoard. Launch the merged app explicitly; this identity preserves existing family calls and data. Local episodic memory: foreground app/window, idle/away, files and commits. Audio recording, transcription, session management and search run inside Funes at /audio and share one launcher and one MCP connection. Audio data lives in data/audio and is retained independently of desktop-activity retention. Recall preserves the source id 'scribe' for existing citations, while Argus (screen) and Echo (clipboard) remain external sources."
+  "notes": "Absorbed by Talos's Hoard: https://github.com/Luissalet/TalosHoard. Compatibility identity only. Start the merged app explicitly and enable its module there. This entry preserves family calls, tokens and existing data; it never owns or stops the merged process."
 }
