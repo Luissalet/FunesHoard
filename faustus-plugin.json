@@ -1,32 +1,76 @@
 {
   "schema": 1,
   "id": "funes",
-  "name": "Funes's Hoard",
-  "purpose": "Gives the assistant a local memory of desktop activity and audio sessions. Records and transcribes meetings and voice notes, searches transcripts, and merges them with screen and clipboard memory in one citable timeline.",
-  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search", "audio recording", "live and final transcription", "meeting search and notes", "audio import and export", "meeting minutes with action items", "import audio by file path", "federated recall (screen, clipboard, audio)"],
-  "placeholders": ["FUNES_DIR", "APP_URL"],
-  "defaults": {"APP_URL": "http://127.0.0.1:8813"},
+  "name": "Funes's Hoard · Talos",
+  "purpose": "Absorbed by Talos's Hoard. Compatibility identity only; no standalone server. Gives the assistant a local memory of desktop activity and audio sessions. Records and transcribes meetings and voice notes, searches transcripts, and merges them with screen and clipboard memory in one citable timeline.",
+  "capabilities": [
+    "activity timeline",
+    "day summaries",
+    "resume context",
+    "recent files",
+    "git commits",
+    "activity search",
+    "audio recording",
+    "live and final transcription",
+    "meeting search and notes",
+    "audio import and export",
+    "meeting minutes with action items",
+    "import audio by file path",
+    "federated recall (screen, clipboard, audio)"
+  ],
+  "placeholders": [
+    "FUNES_DIR",
+    "APP_URL"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5220/legacy/funes",
+    "TALOS_DIR": "{FUNES_DIR}/../Talos's Hoard"
+  },
   "app": {
-    "url_default": "http://127.0.0.1:8813",
-    "ui_url": "{APP_URL}",
-    "health": {"path": "/api/health", "expect": {"service": "funes-hoard"}},
-    "identify": {"service": ["funes-hoard"], "title": ["funes's hoard"]},
-    "launch_hint": {
-      "kind": "process",
-      "executable": "{FUNES_DIR}/.venv/Scripts/python.exe",
-      "argv": ["-m", "funes_hoard", "--no-browser"],
-      "cwd": "{FUNES_DIR}",
-      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 30}
+    "url_default": "http://127.0.0.1:5220/legacy/funes",
+    "ui_url": "http://127.0.0.1:5220/",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "funes-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "funes-hoard"
+      ],
+      "title": [
+        "funes's hoard"
+      ]
     }
   },
   "mcp": {
     "transport": "stdio",
-    "command": "{FUNES_DIR}/.venv/Scripts/python.exe",
-    "args": ["{FUNES_DIR}/funes_hoard/mcp_server.py"],
-    "env": {"FUNES_URL": "{APP_URL}"},
-    "optional_env": ["FUNES_DATA_DIR", "FUNES_AUDIO_TOKEN_FILE"]
+    "command": "{TALOS_DIR}/.venv/Scripts/python.exe",
+    "args": [
+      "{TALOS_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "TALOS_URL": "http://127.0.0.1:5220",
+      "TALOS_TOKEN_FILE": "{TALOS_DIR}/data/mcp-token"
+    },
+    "optional_env": [
+      "TALOS_DATA_DIR"
+    ]
   },
-  "x-family": {"copilot": true},
-  "provides": {"skills": ["skills/where-was-i/SKILL.md"]},
-  "notes": "Local episodic memory: foreground app/window, idle/away, files and commits. Audio recording, transcription, session management and search run inside Funes at /audio and share one launcher and one MCP connection. Audio data lives in data/audio and is retained independently of desktop-activity retention. Recall preserves the source id 'scribe' for existing citations, while Argus (screen) and Echo (clipboard) remain external sources."
+  "x-family": {
+    "copilot": true,
+    "absorbed_by": {
+      "id": "talos",
+      "repository": "https://github.com/Luissalet/TalosHoard",
+      "module": "legacy/funes",
+      "standalone": false
+    }
+  },
+  "provides": {
+    "skills": [
+      "skills/where-was-i/SKILL.md"
+    ]
+  },
+  "notes": "Absorbed by Talos's Hoard: https://github.com/Luissalet/TalosHoard. Launch the merged app explicitly; this identity preserves existing family calls and data. Local episodic memory: foreground app/window, idle/away, files and commits. Audio recording, transcription, session management and search run inside Funes at /audio and share one launcher and one MCP connection. Audio data lives in data/audio and is retained independently of desktop-activity retention. Recall preserves the source id 'scribe' for existing citations, while Argus (screen) and Echo (clipboard) remain external sources."
 }
